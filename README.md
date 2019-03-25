@@ -21,19 +21,19 @@ It also needs [myulits](https://github.com/folguinch/myutils).
 
 The main program runs from the `pipeline.sh` script. It requires the input data
 to be in the following directories:
-* `final_uvdata` for the split ms.
+* `final_uvdata` for the split visibilities ms.
 * `dirty` for the dirty FITS files separated by spectral windows (in some cases 
   in CASA format, see below). The spectral window must be included in the file 
   name, with the substring `.spw[0-3].`.
 
 In both cases the file names have to start with:
-* **<field name>** if the observations have 1 EB.
-* **<field name>.<EB number>** if the observations have more than 1 EB. The EB
+* `<field_name>` if the observations have 1 EB.
+* `<field_name>.<EB_number>` if the observations have more than 1 EB. The EB
   number starts from 1.
 
 By default these directories should be in the upper directory, but this can be
 modified by changing the `BASE` parameter defined at the beginning of the
-script. A configuration file named **<field name>.cfg** needs to be created in
+script. A configuration file named `<field_name>.cfg` needs to be created in
 the `BASE` directory (see below for details about this file).
 
 All the directories with the products (e.g. plots) are created by the script if
@@ -98,6 +98,7 @@ It is possible to run the program at a specific position with:
 ./pipeline.sh --pos <x pixel> <y pixel> <field_name>
 ```
 **IMPORTANT 1:** the positions are zero based.
+
 **IMPORTANT 2:** different positions for each EB has not been implemented. The
 recommendation is to produce images with the same size and pixel size for each
 EB if using this method.
