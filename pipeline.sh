@@ -334,7 +334,9 @@ function main () {
 # Command line options
 PutRms=0
 Redo=1
-Method="position"
+Method="max"
+Xpos=""
+Ypos=""
 NEB=1
 while [ "$1" != "" ]; do
     case $1 in
@@ -345,6 +347,13 @@ while [ "$1" != "" ]; do
                                 shift
                                 ;;
         --put_rms )             PutRms=1
+                                shift
+                                ;;
+        --pos )                 Method="position"
+                                shift
+                                Xpos=$1
+                                shift
+                                Ypos=$1
                                 shift
                                 ;;
         --max )                 Method="max"
@@ -360,17 +369,6 @@ while [ "$1" != "" ]; do
                                 ;;
     esac
 done
-
-if [ $Method == "position" ]
-then
-    Xpos=$1
-    shift
-    Ypos=$1
-    shift
-else
-    Xpos=""
-    Ypos=""
-fi
 
 main
 echo "QMD"
