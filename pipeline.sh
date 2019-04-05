@@ -203,7 +203,7 @@ function run_pbclean () {
         local imgname="${PBclean}/$(basename $1)"
         if [ $SPW != "-1" ]
         then
-            local flags="--nothreshold --continuum --spw $SPW"
+            local flags="--nothreshold --continuum --spw 0"
         else
             local flags="--nothreshold --continuum"
         fi
