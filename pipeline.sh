@@ -236,7 +236,6 @@ function split_continuum () {
     else
         echo "Files $splitfile1 and $splitfile2 already exist"
     fi
-    exit
 }
 
 function concat_vis () {

@@ -25,8 +25,8 @@ def main():
     fitspw = ','.join(fitspws)
 
     # If spw:
-    if args.spw:
-        spw = '%s' % spw
+    if args.spw is not None:
+        spw = '%s' % args.spw
         outputvis1 = args.uvdata[0] + '.spw%s.cont_avg' % spw
         outputvis2 = args.uvdata[0] + '.spw%s.allchannels_avg' % spw
         width = args.widths_avg[args.spw]
@@ -35,8 +35,6 @@ def main():
         outputvis1 = args.uvdata[0] + '.cont_avg'
         outputvis2 = args.uvdata[0] + '.allchannels_avg'
         width = args.widths_avg
-    print spw
-    exit()
 
     # Split flagged
     flagmanager(vis=args.uvdata[0], mode='save', 
