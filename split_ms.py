@@ -33,8 +33,10 @@ def main():
     else:
         spw = '0,1,2,3'
         outputvis1 = args.uvdata[0] + '.cont_avg'
-        outputvis2 = args.uvdata[0] + '.allchannels_avg' % spw
+        outputvis2 = args.uvdata[0] + '.allchannels_avg'
         width = args.widths_avg
+    print spw
+    exit()
 
     # Split flagged
     flagmanager(vis=args.uvdata[0], mode='save', 
