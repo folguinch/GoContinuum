@@ -34,7 +34,7 @@ def main():
             help='Number of rms level')
     parser.add_argument('--continuum', action='store_true',
             help='Clean continuum image')
-    parser.add_argument('--spw', nargs=1, type=str,
+    parser.add_argument('--spw', nargs=1, type=str, default=['0,1,2,3'],
             help='Image file name')
     parser.add_argument('uvdata', nargs=1, type=str,
             help='uv data ms')
@@ -55,6 +55,10 @@ def main():
             threshold = str(threshold)
         except:
             threshold = ''
+        if args.continuum and 'spw' in config.options(section):
+            spws = map(str, split(config.get(section,'spw')))
+        else:
+            spws = args.spw
 
     # Setup
     spw = args.spw
@@ -68,26 +72,27 @@ def main():
     
     # Clean
     if args.continuum:
-        tclean(vis=args.uvdata[0],
-                imagename=args.imagename[0],
-                field = field,
-                spw = '0,1,2,3',
-                outframe = 'LSRK',
-                specmode = 'mfs',
-                imsize = imsize,
-                cell = cellsize,
-                deconvolver = 'hogbom',
-                niter = 10000,
-                weighting = 'briggs', 
-                robust = 0.5, 
-                usemask = 'pb',
-                pbmask = 0.2, 
-                gridder = 'standard', 
-                pbcor = True,
-                threshold=threshold,
-                interactive = False,
-                chanchunks=-1,
-                parallel=True)
+        for spw in spws:
+            tclean(vis=args.uvdata[0],
+                    imagename=args.imagename[0],
+                    field = field,
+                    spw = spw,
+                    outframe = 'LSRK',
+                    specmode = 'mfs',
+                    imsize = imsize,
+                    cell = cellsize,
+                    deconvolver = 'hogbom',
+                    niter = 10000,
+                    weighting = 'briggs', 
+                    robust = 0.5, 
+                    usemask = 'pb',
+                    pbmask = 0.2, 
+                    gridder = 'standard', 
+                    pbcor = True,
+                    threshold=threshold,
+                    interactive = False,
+                    chanchunks=-1,
+                    parallel=True)
     else:
         tclean(vis=args.uvdata[0],
                 imagename=args.imagename[0],

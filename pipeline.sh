@@ -201,15 +201,30 @@ function run_pbclean () {
     elif [ $2 -eq 1 ]
     then
         local imgname="${PBclean}/$(basename $1)"
-        mpicasa -n 5 $(which casa) -c $script --nothreshold --continuum $1 $imgname $config
+        if [ $SPW != "-1" ]
+        then
+            local flags="--nothreshold --continuum --spw $SPW"
+        else
+            local flags="--nothreshold --continuum"
+        fi
+
+        mpicasa -n 5 $(which casa) -c $script $flags $1 $imgname $config
     fi
 
 }
 
 function split_continuum () {
     local script="split_ms.py"
-    local splitfile1="${1}.cont_avg"
-    local splitfile2="${1}.allchannels_avg"
+    if [ $SPW != "-1" ]
+    then
+        local splitfile1="${1}.spw${SPW}.cont_avg"
+        local splitfile2="${1}.spw${SPW}.allchannels_avg"
+        local flags="--spw $SPW "
+    else
+        local splitfile1="${1}.cont_avg"
+        local splitfile2="${1}.allchannels_avg"
+        local flags=""
+    fi
     if [ $Redo -eq 1 ] || [ ! -d $splitfile1 ]
     then
         if [ -d $splitfile1 ]
@@ -217,7 +232,7 @@ function split_continuum () {
             echo "Removing continuum split files"
             rm -rf $splitfile1 $splitfile2
         fi
-        casa -c $script $*
+        casa -c $script ${flags}$*
     else
         echo "Files $splitfile1 and $splitfile2 already exist"
     fi
@@ -309,14 +324,26 @@ function main () {
         # uvcontsub
         local uvdatams="${UVdata}/${SRC}*.ms"
         local chanfiles="${Dirty}/${SRC}*.chanfile.txt"
-        run_uvcontsub $uvdatams $chanfiles
-        contsubms="${contsubms} ${uvdatams}.contsub"
+        if [ $Line -eq 1 ]
+        then
+            run_uvcontsub $uvdatams $chanfiles
+            contsubms="${contsubms} ${uvdatams}.contsub"
+        fi
 
         # Splits
         echo $sep2
-        split_continuum $uvdatams $chanfiles
-        splitms1="${splitms1} ${uvdatams}.cont_avg"
-        splitms2="${splitms2} ${uvdatams}.allchannels_avg"
+        if [ $Continuum -eq 1 ]
+        then
+            split_continuum $uvdatams $chanfiles
+            if [ $SPW != "-1" ]
+            then
+                splitms1="${splitms1} ${uvdatams}.spw${SPW}.cont_avg"
+                splitms2="${splitms2} ${uvdatams}.spw${SPW}.allchannels_avg"
+            else
+                splitms1="${splitms1} ${uvdatams}.cont_avg"
+                splitms2="${splitms2} ${uvdatams}.allchannels_avg"
+            fi
+        fi
 
         #run_pbclean "${uvdatams}.contsub"
         counter=$((counter + 1))
@@ -324,11 +351,21 @@ function main () {
     done
     
     # For lines
-    line_pipe $uvdatams $contsubms 
+    if [ $Line -eq 1 ] 
+    then
+        line_pipe $uvdatams $contsubms 
+    else
+        echo "Skipping line pipe"
+    fi
 
     # For continuum
-    continuum_pipe $uvdatams $splitms1
-    continuum_pipe $uvdatams $splitms2
+    if [ $Continuum -eq 1 ]
+    then
+        continuum_pipe $uvdatams $splitms1
+        continuum_pipe $uvdatams $splitms2
+    else
+        echo "Skipping continuum pipe"
+    fi
 }
 
 # Command line options
@@ -338,6 +375,9 @@ Method="max"
 Xpos=""
 Ypos=""
 NEB=1
+Line=1
+Continuum=1
+SPW="-1"
 while [ "$1" != "" ]; do
     case $1 in
         -h | --help )           usage
@@ -361,6 +401,16 @@ while [ "$1" != "" ]; do
                                 ;;
         --neb )                 shift
                                 NEB=$1
+                                shift
+                                ;;
+        --continuum )           Line=0
+                                shift
+                                ;;
+        --line )                Continuum=0
+                                shift
+                                ;;
+        --spw )                 shift
+                                SPW=$1
                                 shift
                                 ;;
         * )                     SRC0=$1
