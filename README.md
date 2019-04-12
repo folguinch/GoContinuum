@@ -15,8 +15,6 @@ python packages:
 * matplotlib
 * astropy
 
-It also needs [myulits](https://github.com/folguinch/myutils).
-
 ### Data structure
 
 The main program runs from the `pipeline.sh` script. It requires the input data
