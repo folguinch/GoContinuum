@@ -138,6 +138,7 @@ function get_peak_continuum_channels () {
         echo $sep2
         echo "Extracting spectra"
         echo "Working on: $(basename $dirt)"
+        specbase=${dirt/.fits/}
         get_spectra $dirt $specbase
         
         echo "Getting continuum channels"
