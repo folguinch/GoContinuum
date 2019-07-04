@@ -46,15 +46,14 @@ def main():
 
     config = ConfigParser()
     config.read(args.configfile[0])
-    for section in config.sections():
-        field = str(section)
-        imsize = map(int, config.get(section, 'imsize').split())
-        cellsize = str(config.get(section, 'cellsize'))
-        try:
-            threshold = config.get(section, 'threshold', None)
-            threshold = str(threshold)
-        except:
-            threshold = ''
+    field = args.get('pbclean', 'field')
+    imsize = map(int, config.get('pbclean', 'imsize').split())
+    cellsize = str(config.get('pbclean', 'cellsize'))
+    try:
+        threshold = config.get('pbclean', 'threshold', None)
+        threshold = str(threshold)
+    except:
+        threshold = ''
 
     # Setup
     spw = args.spw
@@ -81,7 +80,7 @@ def main():
                 weighting = 'briggs', 
                 robust = 0.5, 
                 usemask = 'pb',
-                pbmask = 0.2, 
+                pbmask = config.getfloat('pbclean', 'pbmask'), 
                 gridder = 'standard', 
                 pbcor = True,
                 threshold=threshold,
@@ -102,7 +101,7 @@ def main():
                 weighting = 'briggs', 
                 robust = 0.5, 
                 usemask = 'pb',
-                pbmask = 0.2, 
+                pbmask = config.getfloat('pbclean', 'pbmask'), 
                 gridder = 'standard', 
                 pbcor = True,
                 threshold=threshold,
