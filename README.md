@@ -119,7 +119,7 @@ datacolumn = corrected
 pbmask = 0.2
 
 [yclean]
-vlsr = 0.0 # km/s
+vlsr = 0.0
 dir = /dir/to/yclean
 freqs = 234.525GHz 232.025GHz 217.824GHz 220.024GHz
 chanranges = 0~1930 1910~3839
@@ -132,7 +132,8 @@ The `spw` parameter is only used in `split_ms` and `pbclean`.
 
 The `chanranges` parameter will split the data in different cubes, whilst 
 `joinchans` are the channels used to join these cubes. The latter can be 
-ommited if the data won't be splitted into smaller cubes.
+ommited if the data won't be splitted into smaller cubes. The `vlsr` is in
+km/s.
 
 If there are spectral windows with different sizes then the `yclean` section 
 should have values of `chanranges` and `joinchans` for each spw. For example, if
@@ -141,7 +142,7 @@ and the second one with 1920 channels and use all the channels, then the yclean
 section would look like:
 ```INI
 [yclean]
-vlsr = 0.0 # km/s
+vlsr = 0.0
 dir = /dir/to/yclean
 freqs = 234.525GHz 232.025GHz
 chanrange1 = 0~1930 1910~3839
