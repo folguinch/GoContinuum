@@ -27,7 +27,7 @@ to be in the following directories:
 In both cases the file names have to start with:
 * `<field_name>` if the observations have 1 EB.
 * `<field_name>.<EB_number>` if the observations have more than 1 EB. The EB
-  number starts from 1.
+  numbering starts from 1.
 
 By default these directories should be in the upper directory, but this can be
 modified by changing the `BASE` parameter defined at the beginning of the
@@ -60,7 +60,7 @@ For lines then:
 - [x] Run `uvcontsub` (in CASA) for each EB using the mask to subtract the 
     continuum.
 - [x] If more than 1 EB, concatenate the visibilities.
-- [ ] Use YCLEAN with the continuum subtracted visibilities.
+- [x] Use YCLEAN with the continuum subtracted visibilities.
 
 For continuum then:
 - [x] Split the visibilities and average channels:
@@ -103,10 +103,43 @@ EB if using this method.
 
 ## The `cfg` file
 
-The configuration file **<field name>.cfg** must follow the following example:
+An example file is in the example directory. The configuration file 
+**<field name>.cfg** must follow the following example:
 ```INI
-[field_name]
-imsize = 1024 1024
-cellsize = 0.04arcsec
+[DEFAULT]
+field = source
+imsize = 1920 1920
+cellsize = 0.03arcsec
+
+[pbclean]
+pbmask = 0.2
+
+[yclean]
+vlrs = 0.0 # km/s
+dir = /dir/to/yclean
+freqs = 234.525GHz 232.025GHz 217.824GHz 220.024GHz
+chanranges = 0~1930 1910~3839
+joinchans = 0~1920 11~1929
+```
+
+The `chanranges` parameter will split the data in different cubes, whilst 
+`joinchans` are the channels used to join these cubes. The latter can be 
+ommited if the data won't be splitted into smaller cubes.
+
+Parameters in the `DEFAULT` section are applied to all the other sections.
+
+If there are spectral windows with different sizes then the `yclean` section 
+should have values of `chanranges` and `joinchans` for each spw. For example, if
+there are 2 spws, the first one with 3840 channels and want to split it in around half, 
+and the second one with 1920 channels and use all the channels, then the yclean 
+section would look like:
+```INI
+[yclean]
+vlrs = 0.0 # km/s
+dir = /dir/to/yclean
+freqs = 234.525GHz 232.025GHz
+chanrange1 = 0~1930 1910~3839
+chanrange2 = 0~1919
+joinchans1 = 0~1920 11~1929
 ```
 
