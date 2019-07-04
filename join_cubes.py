@@ -10,6 +10,30 @@ def crop_spectral_axis(chans, outfile):
     aux = ia.crop(outfile=outfile, axes=ind, chans=chans)
     aux.close()
 
+def join_cubes(inputs, output, channels):
+    assert len(channels)==len(inputs)
+    # Crop images
+    for i,(chans,inp) in enumerate(zip(channels, inputs)):
+        ia.open(os.path.expanduser(inp))
+        img_name = 'temp%i.image' % i
+        aux = crop_spectral_axis(chans, img_name)
+        ia.close()
+
+        if i==0:
+            filelist = img_name
+        else:
+            filelist += ' '+img_name 
+
+    # Concatenate
+    imagename = os.path.expanduser(output)+'.image'
+    ia.imageconcat(outfile=imagename, infiles=filelist)
+    exportfits(imagename=imagename, 
+            fitsimage=imagename.replace('.image','.fits'))
+    ia.close()
+
+    print 'Cleaning up'
+    os.system('rm -rf temp*.image')
+
 def main():
     # Command line options
     parser = argparse.ArgumentParser()
@@ -28,23 +52,8 @@ def main():
     if args.channels:
         assert len(args.channels)==len(args.inputs)
 
-    # Crop images
-    for i,(chans,inp) in enumerate(zip(args.channels, args.inputs)):
-        ia.open(os.path.expanduser(inp))
-        img_name = 'temp%i.image' % i
-        aux = crop_spectral_axis(chans, img_name)
-        ia.close()
+    join_cubes(args.inputs, args.output, args.channels)
 
-        if i==0:
-            filelist = img_name
-        else:
-            filelist += ' '+img_name 
-
-    # Concatenate
-    imagename = os.path.expanduser(args.output)+'.image'
-    ia.imageconcat(outfile=imagename, infiles=filelist)
-    exportfits(imagename=imagename, 
-            fitsimage=imagename.replace('.image','.fits'))
 
 if __name__=="__main__":
     try:
