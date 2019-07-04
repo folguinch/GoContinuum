@@ -7,7 +7,7 @@ import numpy as np
 from join_cubes import join_cubes
 
 def get_nchans(chanrange):
-    i, f = map(int, ch.split('~'))
+    i, f = map(int, chanrange.split('~'))
     return abs(f-i) + 1
 
 def fill_molecules(s, j, freqs, chanranges, nchans):
@@ -15,13 +15,49 @@ def fill_molecules(s, j, freqs, chanranges, nchans):
     fmt2 = fmt1 + '_%i'
     fmt3 = '%i:%s'
 
-    name = fmt2 % (s,j)
-    freq = freqs[s]
-    nchan = nchans[j]
     spw = fmt1 % s
-    chran = fmt3 % (s, chanranges[j])
+    freq = freqs[s]
+    if j is None:
+        name = spw
+        chran = str(s)
+        nchan = nchans[0]
+    else:
+        name = fmt2 % (s,j)
+        chran = fmt3 % (s, chanranges[j])
+        nchan = nchans[j]
 
     return [name, freq, '', '', nchan, spw, chran]
+
+def get_windows(conf):
+    freqs = conf.get('yclean', 'freqs').split()
+    if 'chanranges' in conf.options('yclean'):
+        chanranges = config.get('yclean', 'chanranges').split()
+        nchans = map(get_nchans, chanranges)
+        if len(nchans)==1:
+            j = None
+            molecules = np.array([fill_molecules(s,j,freqs,chanranges,nchans) \
+                for s in range(len(freqs))])
+        else:
+            molecules = np.array([fill_molecules(s,j,freqs,chanranges,nchans) \
+                for s in range(len(freqs)) \
+                for j in range(len(chanranges))])
+        nsplits = [len(nchans)-1]*len(freqs)
+    elif any('chanrange' in opt for opt in conf.options('yclean')):
+        molecules = []
+        nsplits = []
+        for i in range(1,len(freqs)+1):
+            chanranges = config.get('yclean', 'chanrange%i' % i).split()
+            nchans = map(get_nchans, chanranges)
+            s = i-1
+            if len(nchans)==1:
+                j = None
+                molecules += [fill_molecules(s,j,freqs,chanranges,nchans)]
+            else:
+                molecules += [fill_molecules(s,j,freqs,chanranges,nchans) \
+                    for j in range(len(chanranges))]
+            nsplits += [len(nchans)-1]
+        molecules = np.array(molecules)
+    return molecules, nsplits
 
 def main():
     # Command line options
@@ -51,12 +87,13 @@ def main():
     execfile(os.path.join(diryclean, 'secondMaxLocal.py'))
 
     # Spectral setup
-    freqs = config.get('yclean', 'freqs').split()
-    chanranges = config.get('yclean', 'chanranges').split()
-    nchans = map(get_nchans, chanranges)
-    molecules = np.array([fill_molecules(s,j,freqs,chanranges,nchans) \
-            for s in range(len(freqs)) \
-            for j in range(len(chanranges))])
+    #freqs = config.get('yclean', 'freqs').split()
+    #chanranges = config.get('yclean', 'chanranges').split()
+    #nchans = map(get_nchans, chanranges)
+    #molecules = np.array([fill_molecules(s,j,freqs,chanranges,nchans) \
+    #        for s in range(len(freqs)) \
+    #        for j in range(len(chanranges))])
+    molecules, nsplits = get_windows(config)
 
     # Clean options
     gridder = 'standard'
@@ -100,12 +137,15 @@ def main():
         finalcubes += [imagename+'.tc_final.fits']
 
     # Join the cubes
-    nsub = len(chanranges)
-    for i in range(len(freqs)):
+    j = 0
+    for i, ns in enumerate(nsplits):
         output = os.path.join(args.basedir, 'clean',
                 source+'.spw%i.cube' % i)
-        j = i*nsub
-        join_cubes(finalcubes[j:j+nsub], output, 
-                config.get('yclean','joinchans').split)
-
+        nsub = ns + 1
+        if ns==0:
+            os.system('cp finalcubes[j] output')
+        else:
+            join_cubes(finalcubes[j:j+nsub], output, 
+                    config.get('yclean','joinchans').split)
+        j += nsub
         
