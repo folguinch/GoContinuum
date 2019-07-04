@@ -70,7 +70,7 @@ def main():
         tclean(vis=args.uvdata[0],
                 imagename=args.imagename[0],
                 field = field,
-                spw = '0,1,2,3',
+                spw = config.get('pbclean','spw', fallback='0,1,2,3'),
                 outframe = 'LSRK',
                 specmode = 'mfs',
                 imsize = imsize,

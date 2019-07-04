@@ -107,9 +107,13 @@ An example file is in the example directory. The configuration file
 **<field name>.cfg** must follow the following example:
 ```INI
 [DEFAULT]
-field = source
+field = field_name
 imsize = 1920 1920
 cellsize = 0.03arcsec
+spw = 0,1,2,3
+
+[split_ms]
+datacolumn = corrected
 
 [pbclean]
 pbmask = 0.2
@@ -122,11 +126,13 @@ chanranges = 0~1930 1910~3839
 joinchans = 0~1920 11~1929
 ```
 
+Parameters in the `DEFAULT` section are applied to all the other sections.
+If selfcal has not been applied, then `datacolumn` should be set to `data`. 
+The `spw` parameter is only used in `split_ms` and `pbclean`.
+
 The `chanranges` parameter will split the data in different cubes, whilst 
 `joinchans` are the channels used to join these cubes. The latter can be 
 ommited if the data won't be splitted into smaller cubes.
-
-Parameters in the `DEFAULT` section are applied to all the other sections.
 
 If there are spectral windows with different sizes then the `yclean` section 
 should have values of `chanranges` and `joinchans` for each spw. For example, if

@@ -355,7 +355,7 @@ function main () {
 
         # Splits
         echo $sep2
-        split_continuum $uvdatams $chanfiles
+        split_continuum "${BASE}/${SRC0}.cfg" $uvdatams $chanfiles
         splitms1="${splitms1} ${uvdatams}.cont_avg"
         splitms2="${splitms2} ${uvdatams}.allchannels_avg"
 
