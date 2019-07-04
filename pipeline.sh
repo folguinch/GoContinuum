@@ -10,6 +10,7 @@ set -eu
 
 sep1="================================================================================"
 sep2="--------------------------------------------------------------------------------"
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 
 # Functions
 function usage () {
@@ -17,12 +18,17 @@ function usage () {
 }
 
 function check_environment () {
-    if [ ! -d $Plots ]
+    if [[ ! -d $Dirty ]]
+    then
+        echo "Could not find dirty directory"
+        exit 1
+    fi
+    if [[ ! -d $Plots ]]
     then
         echo "Creating plots directory"
         mkdir $Plots
     fi
-    if [ ! -d $PBclean ]
+    if [[ ! -d $PBclean ]]
     then
         echo "Creating pbclean directory"
         mkdir $PBclean
@@ -30,17 +36,17 @@ function check_environment () {
 }
 
 function rms_to_header () {
-    local script="rms_to_header.py"
+    local script="$DIR/rms_to_header.py"
     casa -c $script $*
 }
 
 function get_spectra () {
-    local script="extract_spectra.py"
-    if [ $Method == "position" ]
+    local script="$DIR/extract_spectra.py"
+    if [[ $Method == "position" ]]
     then
         echo "Extracting spectrum at: ${Xpos}, ${Ypos}"
         local flags="$Method $1 $2 $Xpos $Ypos"
-    elif [ $Method == "max" ]
+    elif [[ $Method == "max" ]]
     then
         echo "Extracting spectrum at maximum"
         local flags="--niter 1 --image_file ${1/.fits/.max.fits}"
@@ -50,14 +56,14 @@ function get_spectra () {
 }
 
 function combine_peaks () {
-    local script="combine_peaks.py"
+    local script="$DIR/combine_peaks.py"
     python $script $1 $2
 }
 
 function get_continuum_channels () {
     for specfile in $*
     do
-        local script="continuum_iterative.py"
+        local script="$DIR/continuum_iterative.py"
         local plotname="${specfile/dirty/plots}"
         local flags="--table ${BASE}pipeline_${method}_continuum.dat"
         flags="$flags --tableinfo $(basename $specfile)"
@@ -72,7 +78,7 @@ function get_continuum_channels () {
 
 function get_peak_continuum_channels () {
     local methodin="$Method"
-    if [ $Method == "max" ]
+    if [[ $Method == "max" ]]
     then
         # First pass
         local counter=0
@@ -80,16 +86,16 @@ function get_peak_continuum_channels () {
         for dirt in ${Dirty}/${SRC}*.image.fits
         do
             local specbase=${dirt/.fits/}
-            if [ $counter -eq 0 ]
+            if [[ $counter -eq 0 ]]
             then
                 local posfile="${dirt/.fits/.max.positions.dat}"
                 posfile=${posfile/.spw[0-3]./.}
 
                 # Reset if redo
-                if [ $Redo -eq 1 ] && [ -f $posfile ]
+                if [[ $Redo -eq 1 ]] && [[ -f $posfile ]]
                 then
                     rm -f $posfile
-                elif [ $Redo -eq 0 ] && [ -f $posfile ]
+                elif [[ $Redo -eq 0 ]] && [[ -f $posfile ]]
                 then
                     echo "File $(basename $posfile) already created"
                     break
@@ -106,7 +112,7 @@ function get_peak_continuum_channels () {
         echo $sep2
         echo "Combining peaks"
         local combposfile="${posfile/.dat/.combined.dat}"
-        if [ $Redo -eq 1 ] || [ ! -f $combposfile ]
+        if [[ $Redo -eq 1 ]] || [[ ! -f $combposfile ]]
         then
             combine_peaks $posfile $combposfile
         else
@@ -119,7 +125,7 @@ function get_peak_continuum_channels () {
         counter=1
         for pos in $positions
         do
-            if [ $counter -eq 1 ]
+            if [[ $counter -eq 1 ]]
             then
                 Xpos="$pos"
             else
@@ -143,37 +149,37 @@ function get_peak_continuum_channels () {
     done
 
     # Restore method
-    if [ "$methodin" != "$Method" ]
+    if [[ "$methodin" != "$Method" ]]
     then
         Method="$methodin"
     fi
 }
 
 function run_uvcontsub () {
-    local script="run_uvcontsub.py"
-    if [ $Redo -eq 1 ] || [ ! -d "$1.contsub" ]
+    local script="$DIR/run_uvcontsub.py"
+    if [[ $Redo -eq 1 ]] || [[ ! -d "$1.contsub" ]]
     then
-        if [ -d "$1.contsub" ]
+        if [[ -d "$1.contsub" ]]
         then
             echo "Removing ${1}.contsub"
             rm -rf "${1}.contsub"
         fi
         casa -c $script $*
-    elif [ -d "$1.contsub" ]
+    elif [[ -d "$1.contsub" ]]
     then
         echo "Directory ${1}.contsub already exists"
     fi
 }
 
 function run_pbclean () {
-    local script="pbclean.py"
+    local script="$DIR/pbclean.py"
     local config="${BASE}${SRC0}.cfg"
-    if [ $2 -eq 0 ]
+    if [[ $2 -eq 0 ]]
     then
         local spw=0
-        while [ $spw -le 3 ]
+        while [[ $spw -le 3 ]]
         do
-            if [ $NEB -gt 1 ]
+            if [[ $NEB -gt 1 ]]
             then
                 local imgname="$(basename ${Dirty}/${SRC}*.spw${spw}.*.image)"
                 imgname="$PBclean/${imgname/.image/}.${1##*.}"
@@ -181,9 +187,9 @@ function run_pbclean () {
                 local imgname="$(basename ${Dirty}/${SRC}*.spw${spw}.*.image)"
                 imgname="$PBclean/${imgname/.image/}.${1##*.}"
             fi
-            if [ $Redo -eq 1 ] || [ ! -d "${imgname}.image" ]
+            if [[ $Redo -eq 1 ]] || [[ ! -d "${imgname}.image" ]]
             then
-                if [ -d "${imgname}.image" ]
+                if [[ -d "${imgname}.image" ]]
                 then
                     echo "Removing pb cleaned image: $(basename $imgname)"
                     rm -rf "${imgname}.*"
@@ -195,12 +201,12 @@ function run_pbclean () {
             spw=$((spw + 1))
             echo $sep2
         done
-    elif [ $2 -eq 1 ]
+    elif [[ $2 -eq 1 ]]
     then
         local imgname="${PBclean}/$(basename $1)"
-        if [ $Redo -eq 1 ] || [ ! -d "${imgname}.image" ]
+        if [[ $Redo -eq 1 ]] || [[ ! -d "${imgname}.image" ]]
         then
-            if [ -d "${imgname}.image" ]
+            if [[ -d "${imgname}.image" ]]
             then
                 echo "Removing pb cleaned image: $(basename $imgname)"
                 rm -rf "${imgname}.*"
@@ -214,7 +220,7 @@ function run_pbclean () {
 }
 
 function run_yclean () {
-    local script="exec_yclean.py"
+    local script="$DIR/exec_yclean.py"
     local config="${BASE}${SRC0}.cfg"
     if [[ $Redo -eq 1 ]] || [[ ! -d $YCLEAN ]]
     then
@@ -240,12 +246,12 @@ function run_yclean () {
 }
 
 function split_continuum () {
-    local script="split_ms.py"
+    local script="$DIR/split_ms.py"
     local splitfile1="${1}.cont_avg"
     local splitfile2="${1}.allchannels_avg"
-    if [ $Redo -eq 1 ] || [ ! -d $splitfile1 ]
+    if [[ $Redo -eq 1 ]] || [[ ! -d $splitfile1 ]]
     then
-        if [ -d $splitfile1 ]
+        if [[ -d $splitfile1 ]]
         then
             echo "Removing continuum split files"
             rm -rf $splitfile1 $splitfile2
@@ -257,7 +263,7 @@ function split_continuum () {
 }
 
 function concat_vis () {
-    local script="run_concat.py"
+    local script="$DIR/run_concat.py"
     casa -c $script $*
 }
 
@@ -265,13 +271,13 @@ function line_pipe () {
     local uvdatams="$1"
     shift
     local concatms="$@"
-    if [ $NEB -gt 1 ]
+    if [[ $NEB -gt 1 ]]
     then
         concatms="${uvdatams/${SRC0}.[0-9]./${SRC0}.}"
         concatms="${concatms}.contsub"
-        if [ $Redo -eq 1 ] || [ ! -d $concatms ]
+        if [[ $Redo -eq 1 ]] || [[ ! -d $concatms ]]
         then
-            if [ -d $concatms ]
+            if [[ -d $concatms ]]
             then
                 echo "Removing concatenated line file: $(basename $concatms)"
                 rm -rm $concatms
@@ -291,13 +297,13 @@ function continuum_pipe () {
     local uvdatams="$1"
     shift
     local concatms="$@"
-    if [ $NEB -gt 1 ]
+    if [[ $NEB -gt 1 ]]
     then
         concatms="${uvdatams/${SRC0}.[0-9]./${SRC0}.}"
         concatms="${concatms}.${2##*.}"
-        if [ $Redo -eq 1 ] || [ ! -d $concatms ]
+        if [[ $Redo -eq 1 ]] || [[ ! -d $concatms ]]
         then
-            if [ -d $concatms ]
+            if [[ -d $concatms ]]
             then
                 echo "Removing concatenated continuum file"
                 rm $concatms
@@ -319,7 +325,7 @@ function main () {
     check_environment
 
     # Put the rms in header
-    if [ $PutRms -eq 1 ]
+    if [[ $PutRms -eq 1 ]]
     then
         rms_to_header ${Dirty}/${SRC}*.image
     fi
@@ -329,9 +335,9 @@ function main () {
     local contsubms=""
     local splitms1=""
     local splitms2=""
-    while [ $counter -le $NEB ]
+    while [[ $counter -le $NEB ]]
     do
-        if [ $NEB -gt 1 ]
+        if [[ $NEB -gt 1 ]]
         then
             SRC="${SRC0}.${counter}"
         else
@@ -367,14 +373,14 @@ function main () {
 }
 
 # Command line options
-BASE="../"
+BASE="./"
 PutRms=0
 Redo=1
 Method="max"
 Xpos=""
 Ypos=""
 NEB=1
-while [ "$1" != "" ]; do
+while [[ "$1" != "" ]]; do
     case $1 in
         -h | --help )           usage
                                 exit
