@@ -6,14 +6,8 @@
 #
 #
 
-set -e
+set -eu
 
-# Environment setup
-BASE="../"
-Dirty="${BASE}dirty"
-Plots="${BASE}plots"
-UVdata="${BASE}final_uvdata"
-PBclean="${BASE}pbclean"
 sep1="================================================================================"
 sep2="--------------------------------------------------------------------------------"
 
@@ -204,9 +198,45 @@ function run_pbclean () {
     elif [ $2 -eq 1 ]
     then
         local imgname="${PBclean}/$(basename $1)"
-        mpicasa -n 5 $(which casa) -c $script --nothreshold --continuum $1 $imgname $config
+        if [ $Redo -eq 1 ] || [ ! -d "${imgname}.image" ]
+        then
+            if [ -d "${imgname}.image" ]
+            then
+                echo "Removing pb cleaned image: $(basename $imgname)"
+                rm -rf "${imgname}.*"
+            fi
+            mpicasa -n 5 $(which casa) -c $script --nothreshold --continuum $1 $imgname $config
+        else
+            echo "Image ${imgname}.image already exists"
+        fi
     fi
 
+}
+
+function run_yclean () {
+    local script="exec_yclean.py"
+    local config="${BASE}${SRC0}.cfg"
+    if [[ $Redo -eq 1 ]] || [[ ! -d $YCLEAN ]]
+    then
+        if [[ -d $YCLEAN ]]
+        then
+            echo "Emptying YCLEAN directory: $YCLEAN"
+            rm -rf ${YCLEAN}/*
+            rm -rf *MASCARA.tc*
+        else
+            mkdir $YCLEAN
+        fi
+        if [[ -d $CLEAN ]]
+        then
+            echo "Emptying CLEAN directory: $CLEAN"
+            rm -rf ${CLEAN}/*.cube*
+        else
+            mkdir $CLEAN
+        fi
+        mpicasa -n 3 $(which casa) -c $script --basedir $BASE $1 $config
+    else
+        echo "YCLEAN already ran"
+    fi
 }
 
 function split_continuum () {
@@ -252,7 +282,9 @@ function line_pipe () {
         fi
         echo $sep2
     fi
+
     # YCLEAN HERE
+    run_yclean $concatms
 }
 
 function continuum_pipe () {
@@ -335,6 +367,7 @@ function main () {
 }
 
 # Command line options
+BASE="../"
 PutRms=0
 Redo=1
 Method="max"
@@ -372,6 +405,14 @@ while [ "$1" != "" ]; do
                                 ;;
     esac
 done
+
+# Environment setup
+Dirty="${BASE}/dirty"
+Plots="${BASE}/plots"
+UVdata="${BASE}/final_uvdata"
+PBclean="${BASE}/pbclean"
+CLEAN="${BASE}/clean"
+YCLEAN="${BASE}/yclean"
 
 main
 echo "QMD"
