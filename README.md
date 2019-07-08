@@ -110,7 +110,7 @@ An example file is in the example directory. The configuration file
 field = field_name
 imsize = 1920 1920
 cellsize = 0.03arcsec
-spw = 0,1,2,3
+spws = 0,1,2,3
 
 [split_ms]
 datacolumn = corrected
@@ -121,32 +121,31 @@ pbmask = 0.2
 [yclean]
 vlsr = 0.0
 dir = /dir/to/yclean
-freqs = 234.525GHz 232.025GHz 217.824GHz 220.024GHz
 chanranges = 0~1930 1910~3839
 joinchans = 0~1920 11~1929
 ```
 
 Parameters in the `DEFAULT` section are applied to all the other sections.
 If selfcal has not been applied, then `datacolumn` should be set to `data`. 
-The `spw` parameter is only used in `split_ms` and `pbclean`.
 
 The `chanranges` parameter will split the data in different cubes, whilst 
-`joinchans` are the channels used to join these cubes. The latter can be 
+`joinchans` are the channels used to join these cubes. These can be 
 ommited if the data won't be splitted into smaller cubes. The `vlsr` is in
-km/s.
+km/s. Rest frequencies for each spectral window in `spw` can be given with
+the `restfreqs` parameter in the `yclean` section.
 
 If there are spectral windows with different sizes then the `yclean` section 
-should have values of `chanranges` and `joinchans` for each spw. For example, if
+can take values of `chanranges` and `joinchans` for each spw. For example, if
 there are 2 spws, the first one with 3840 channels and want to split it in around half, 
 and the second one with 1920 channels and use all the channels, then the yclean 
 section would look like:
 ```INI
 [yclean]
+spws = 0,1
 vlsr = 0.0
 dir = /dir/to/yclean
 freqs = 234.525GHz 232.025GHz
-chanrange1 = 0~1930 1910~3839
-chanrange2 = 0~1919
-joinchans1 = 0~1920 11~1929
+chanrange0 = 0~1930 1910~3839
+joinchans0 = 0~1920 11~1929
 ```
 
