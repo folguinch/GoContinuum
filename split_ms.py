@@ -34,7 +34,7 @@ def main():
     initweights(vis=args.uvdata[0], wtmode='weight', dowtsp=True)
     flagdata(vis=args.uvdata[0], mode='manual', spw=fitspw, flagbackup=False)
     split(vis=args.uvdata[0],
-            spw=config.get('split_ms','spw',fallback='0,1,2,3'),
+            spw=config.get('split_ms','spws',fallback='0,1,2,3'),
             outputvis=args.uvdata[0]+'.cont_avg',
             width=args.widths_avg,
             datacolumn=config.get('split_ms','datacolumn',fallback='corrected'))
@@ -42,7 +42,7 @@ def main():
     
     # Split unflagged
     split(vis=args.uvdata[0],
-            spw=config.get('split_ms','spw',fallback='0,1,2,3'),
+            spw=config.get('split_ms','spws',fallback='0,1,2,3'),
             outputvis=args.uvdata[0]+'.allchannels_avg', width=args.widths_avg,
             datacolumn=config.get('split_ms','datacolumn',fallback='corrected'))
 
