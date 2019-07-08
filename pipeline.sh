@@ -355,7 +355,7 @@ function main () {
 
         # Splits
         echo $sep2
-        split_continuum "${BASE}/${SRC0}.cfg" $uvdatams $chanfiles
+        split_continuum "${BASE}${SRC0}.cfg" $uvdatams $chanfiles
         splitms1="${splitms1} ${uvdatams}.cont_avg"
         splitms2="${splitms2} ${uvdatams}.allchannels_avg"
 
@@ -373,7 +373,7 @@ function main () {
 }
 
 # Command line options
-BASE="./"
+BASE=""
 PutRms=0
 Redo=1
 Method="max"
@@ -413,12 +413,16 @@ while [[ "$1" != "" ]]; do
 done
 
 # Environment setup
-Dirty="${BASE}/dirty"
-Plots="${BASE}/plots"
-UVdata="${BASE}/final_uvdata"
-PBclean="${BASE}/pbclean"
-CLEAN="${BASE}/clean"
-YCLEAN="${BASE}/yclean"
+if [[ $BASE != "" ]]
+then
+    BASE="${BASE}/"
+fi
+Dirty="${BASE}dirty"
+Plots="${BASE}plots"
+UVdata="${BASE}final_uvdata"
+PBclean="${BASE}pbclean"
+CLEAN="${BASE}clean"
+YCLEAN="${BASE}yclean"
 
 main
 echo "QMD"

@@ -93,7 +93,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', nargs=1, 
             help='Casa parameter.')
-    parser.add_argument('--basedir', default='./', type=str,
+    parser.add_argument('--basedir', default='', type=str,
             help='Base directory')
     parser.add_argument('uvdata', nargs=1, type=str,
             help='uv data ms')
@@ -145,8 +145,7 @@ def main():
         it = 0
         mol = moldata[0]
         restfreq = moldata[1]
-        dirmol = os.path.realpath(os.path.join(args.basedir, 'yclean',
-            source+'_'+mol))
+        dirmol = os.path.join(args.basedir, 'yclean', source+'_'+mol)
         os.system('rm -rf '+ dirmol)
         width = moldata[2]
         start = moldata[3]
@@ -155,8 +154,7 @@ def main():
         spwline = moldata[6]
         print "Procesing ", mol
         vis = args.uvdata[0]
-        imagename = os.path.realpath(os.path.join(dirmol,
-            'auto'+source+'_'+mol+'.12m'))
+        imagename = os.path.join(dirmol, 'auto'+source+'_'+mol+'.12m')
         print vis, imagename
 
         execfile(os.path.join(diryclean, 'yclean_parallel.py'))
