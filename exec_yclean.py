@@ -34,6 +34,9 @@ def get_windows(conf):
         print 'WARN: length of frequencies does not match length of spws'
         print 'WARN: ignoring frequencies'
         freqs = ['']*len(spws)
+    else:
+        freqs = [f if f.lower()!='none' else '' for f in freqs]
+    assert len(freqs)==len(spws)
     exclude_opts = ['chanranges', 'chanrange']
     filter_opts = ['chanrange' in opt and opt not in exclude_opts \
             for opt in conf.options('yclean')]
@@ -104,7 +107,7 @@ def main():
             help='Configuration file name')
     args = parser.parse_args()
 
-    config = ConfigParser({'restfreqs':[''], 'chanrange':'~'})
+    config = ConfigParser({'restfreqs':'', 'chanrange':'~'})
     config.read(args.configfile[0])
     section = 'yclean'
 
