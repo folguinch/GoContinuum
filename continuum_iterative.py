@@ -14,7 +14,10 @@ from myutils.argparse_actions import LoadFITS, LoadTXTArray
 from extract_spectra import find_peak
 
 # Start settings
-logger = get_logger(__name__, file_name='logs/continuum_iterative.log')
+if os.path.isdir('logs'):
+    logger = get_logger(__name__, file_name='logs/continuum_iterative.log')
+else:
+    logger = get_logger(__name__, file_name='extract_spectra.log')
 
 def group_chans(inds):
     """ Group contiguous channels.

@@ -13,7 +13,10 @@ from astropy.wcs import WCS
 from myutils.argparse_actions import LoadFITS
 
 # Start settings
-logger = get_logger(__name__, filename='extract_spectra.log')
+if os.path.isdir('logs'):
+    logger = get_logger(__name__, file_name='logs/extract_spectra.log')
+else:
+    logger = get_logger(__name__, file_name='extract_spectra.log')
 
 def new_fits(data, hdr=None, filename=None):
 
