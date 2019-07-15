@@ -44,13 +44,13 @@ def main():
             help='Configuration file name')
     args = parser.parse_args()
 
-    config = ConfigParser()
+    config = ConfigParser({'robust':0.5, 'threshold': None, 'spws':'0,1,2,3'})
     config.read(args.configfile[0])
     field = args.get('pbclean', 'field')
     imsize = map(int, config.get('pbclean', 'imsize').split())
     cellsize = str(config.get('pbclean', 'cellsize'))
     try:
-        threshold = config.get('pbclean', 'threshold', None)
+        threshold = config.get('pbclean', 'threshold')
         threshold = str(threshold)
     except:
         threshold = ''
@@ -64,13 +64,14 @@ def main():
         dirty = os.path.join(args.dirtydir[0], dirty)
         rms = imhead(imagename=dirty, mode='get', hdkey='rms')
         threshold = '%fmJy' % (args.nrms[0]*rms*1.E3,)
+    robust = config.getfloat('pbclean', 'robust')
     
     # Clean
     if args.continuum:
         tclean(vis=args.uvdata[0],
                 imagename=args.imagename[0],
                 field = field,
-                spw = config.get('pbclean','spws', fallback='0,1,2,3'),
+                spw = config.get('pbclean','spws'),
                 outframe = 'LSRK',
                 specmode = 'mfs',
                 imsize = imsize,
@@ -78,7 +79,7 @@ def main():
                 deconvolver = 'hogbom',
                 niter = 10000,
                 weighting = 'briggs', 
-                robust = 0.5, 
+                robust = robust, 
                 usemask = 'pb',
                 pbmask = config.getfloat('pbclean', 'pbmask'), 
                 gridder = 'standard', 
@@ -99,7 +100,7 @@ def main():
                 deconvolver = 'hogbom',
                 niter = 10000,
                 weighting = 'briggs', 
-                robust = 0.5, 
+                robust = robust, 
                 usemask = 'pb',
                 pbmask = config.getfloat('pbclean', 'pbmask'), 
                 gridder = 'standard', 

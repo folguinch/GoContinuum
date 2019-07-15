@@ -8,8 +8,8 @@ def main():
             help='Casa parameter.')
     #parser.add_argument('--concatvis', nargs=1, type=str, 
     #        help='Concatenated ms name')
-    parser.add_argument('--widths_avg', default=[120,120,120,120], type=int,
-            help='Channel width average')
+    parser.add_argument('--widths_avg', default=None, type=str,
+            help='Channel width average (coma separated)')
     parser.add_argument('configfile', nargs=1, type=str,
             help='Configuration file name')
     parser.add_argument('uvdata', nargs=1, type=str,
@@ -19,8 +19,26 @@ def main():
     args = parser.parse_args()
 
     # Config file
-    config = ConfigParser()
+    config = ConfigParser({'spws':'0,1,2,3', 'datacolumn':'corrected'})
     config.read(args.configfile[0])
+    
+    # Define width and validate
+    if args.widths_avg is not None:
+        width = map(int, args.widths_avg.split(','))
+    elif 'width' in config.options('split_ms'):
+        width = map(int, config.get('split_ms','width').split())
+    else:
+        casalog.post('width parameter is not defined', 'SEVERE')
+        raise ValueError('width parameter is not defined')
+    lenspw = len(config.get('split_ms','spws').split(','))
+    if len(width)!=lenspw:
+        if len(width)==1:
+            casalog.post('Using the same width for all spws', 'WARN')
+            width = width*lenspws
+        else:
+            msg = 'The number of spws does not match the number of widths'
+            casalog.post(msg, 'SEVERE')
+            raise ValueError(msg)
     
     # Obtain fitspws
     fitspws = []
@@ -34,17 +52,18 @@ def main():
     initweights(vis=args.uvdata[0], wtmode='weight', dowtsp=True)
     flagdata(vis=args.uvdata[0], mode='manual', spw=fitspw, flagbackup=False)
     split(vis=args.uvdata[0],
-            spw=config.get('split_ms','spws',fallback='0,1,2,3'),
+            spw=config.get('split_ms','spws'),
             outputvis=args.uvdata[0]+'.cont_avg',
-            width=args.widths_avg,
-            datacolumn=config.get('split_ms','datacolumn',fallback='corrected'))
+            width=width,
+            datacolumn=config.get('split_ms','datacolumn'))
     flagmanager(vis=args.uvdata[0], mode='restore', versionname='before_cont_flags')
     
     # Split unflagged
     split(vis=args.uvdata[0],
-            spw=config.get('split_ms','spws',fallback='0,1,2,3'),
-            outputvis=args.uvdata[0]+'.allchannels_avg', width=args.widths_avg,
-            datacolumn=config.get('split_ms','datacolumn',fallback='corrected'))
+            spw=config.get('split_ms','spws'),
+            outputvis=args.uvdata[0]+'.allchannels_avg', 
+            width=width,
+            datacolumn=config.get('split_ms','datacolumn'))
 
 if __name__=="__main__":
     main()

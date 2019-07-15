@@ -31,8 +31,9 @@ def get_windows(conf):
     if len(spws)!=len(freqs) and conf.get('yclean', 'restfreqs')=='':
         freqs = ['']*len(spws)
     elif len(spws)!=len(freqs):
-        print 'WARN: length of frequencies does not match length of spws'
-        print 'WARN: ignoring frequencies'
+        casalog.post('Length of frequencies does not match length of spws',
+                'WARN')
+        casalog.post('Ignoring frequencies', 'WARN)'
         freqs = ['']*len(spws)
     else:
         freqs = [f if f.lower()!='none' else '' for f in freqs]
@@ -91,7 +92,7 @@ def join_cubes(inputs, output, channels):
             fitsimage=imagename.replace('.image','.fits'))
     ia.close()
 
-    print 'Cleaning up'
+    casalog.post('Cleaning up')
     os.system('rm -rf temp*.image')
 
 def main():
@@ -107,7 +108,7 @@ def main():
             help='Configuration file name')
     args = parser.parse_args()
 
-    config = ConfigParser({'restfreqs':'', 'chanrange':'~'})
+    config = ConfigParser({'restfreqs':'', 'chanrange':'~', 'robust':0.5})
     config.read(args.configfile[0])
     section = 'yclean'
 
@@ -135,7 +136,7 @@ def main():
     imsize = map(int, config.get(section, 'imsize').split())
     cell = str(config.get(section, 'cellsize'))
     weighting = 'briggs'
-    robust = 0.5
+    robust = config.getfloat('yclean', 'robust')
     deconvolver = 'multiscale' 
     scales = [0,5,15]
     #rms = 5.7e-3
@@ -158,10 +159,12 @@ def main():
         molvis = moldata[5]
         nchan = int(moldata[4])
         spwline = moldata[6]
-        print "Procesing ", mol
+        casalog.post("Procesing %s" % mol)
         vis = args.uvdata[0]
         imagename = os.path.join(dirmol, 'auto'+source+'_'+mol+'.12m')
-        print vis, imagename
+        casalog.post('vis = %s' % vis)
+        casalog.post('imagename = %s' % imagename)
+        casalog.post('Spectral window options: %r' % moldata)
 
         execfile(os.path.join(diryclean, 'yclean_parallel.py'))
         finalcubes += [imagename+'.tc_final.fits']
