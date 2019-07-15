@@ -28,6 +28,7 @@ In both cases the file names have to start with:
 * `<field_name>` if the observations have 1 EB.
 * `<field_name>.<EB_number>` if the observations have more than 1 EB. The EB
   numbering starts from 1.
+The visibility files must end with `.ms`
 
 By default these directories should be in the upper directory, but this can be
 modified by changing the `BASE` parameter defined at the beginning of the
@@ -112,6 +113,11 @@ imsize = 1920 1920
 cellsize = 0.03arcsec
 spws = 0,1,2,3
 
+[afoli]
+flagchans = 12~20 30~40
+levels = 0.03 0.05 0.1 0.15 0.20 0.25
+level_mode = linear
+
 [split_ms]
 datacolumn = corrected
 
@@ -127,6 +133,13 @@ joinchans = 0~1920 11~1929
 
 Parameters in the `DEFAULT` section are applied to all the other sections.
 If selfcal has not been applied, then `datacolumn` should be set to `data`. 
+
+The `flagchans` in `afoli` allows the addition of specific flags for channels.
+If the `levels` pararmeter is included, the program will calculate the channels
+masked at these levels. The channels with valid data are determined where 
+`continuum[i]/final_continuum == 1+levels[j]` where `continuum[i]` is the continuum
+from iteration `i` of the `sigma_clip` function. The kind of interpolation between
+iterations can be controled with `level_mode`.
 
 The `chanranges` parameter will split the data in different cubes, whilst 
 `joinchans` are the channels used to join these cubes. These can be 
