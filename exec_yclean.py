@@ -171,7 +171,7 @@ def main():
 
     # Join the cubes
     j = 0
-    spws = conf.get('yclean', 'spws').split(',')
+    spws = config.get('yclean', 'spws').split(',')
     for spw, ns in zip(spws, nsplits):
         output = os.path.join(args.basedir, 'clean',
                 source+'.spw%i.cube' % spw)
