@@ -33,7 +33,7 @@ def get_windows(conf):
     elif len(spws)!=len(freqs):
         casalog.post('Length of frequencies does not match length of spws',
                 'WARN')
-        casalog.post('Ignoring frequencies', 'WARN)'
+        casalog.post('Ignoring frequencies', 'WARN')
         freqs = ['']*len(spws)
     else:
         freqs = [f if f.lower()!='none' else '' for f in freqs]
@@ -108,7 +108,7 @@ def main():
             help='Configuration file name')
     args = parser.parse_args()
 
-    config = ConfigParser({'restfreqs':'', 'chanrange':'~', 'robust':0.5})
+    config = ConfigParser({'restfreqs':'', 'chanrange':'~', 'robust':'0.5'})
     config.read(args.configfile[0])
     section = 'yclean'
 

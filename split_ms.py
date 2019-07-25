@@ -1,4 +1,4 @@
-import argparse
+import os, argparse
 from ConfigParser import ConfigParser
 
 def main():
@@ -51,17 +51,25 @@ def main():
     flagmanager(vis=args.uvdata[0], mode='save', versionname='before_cont_flags')
     initweights(vis=args.uvdata[0], wtmode='weight', dowtsp=True)
     flagdata(vis=args.uvdata[0], mode='manual', spw=fitspw, flagbackup=False)
+    outputvis = args.uvdata[0]+'.cont_avg'
+    if os.path.isdir(outputvis):
+        casalog.post('Deleting %s' % outputvis, 'WARN')
+        os.system('rm -rf %s' % outputvis)
     split(vis=args.uvdata[0],
             spw=config.get('split_ms','spws'),
-            outputvis=args.uvdata[0]+'.cont_avg',
+            outputvis=outputvis,
             width=width,
             datacolumn=config.get('split_ms','datacolumn'))
     flagmanager(vis=args.uvdata[0], mode='restore', versionname='before_cont_flags')
     
     # Split unflagged
+    outputvis = args.uvdata[0]+'.allchannels_avg'
+    if os.path.isdir(outputvis):
+        casalog.post('Deleting %s' % outputvis, 'WARN')
+        os.system('rm -rf %s' % outputvis)
     split(vis=args.uvdata[0],
             spw=config.get('split_ms','spws'),
-            outputvis=args.uvdata[0]+'.allchannels_avg', 
+            outputvis=outputvis, 
             width=width,
             datacolumn=config.get('split_ms','datacolumn'))
 

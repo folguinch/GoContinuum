@@ -325,7 +325,7 @@ function line_pipe () {
             if [[ -d $concatms ]]
             then
                 logger "Removing concatenated line file: $(basename $concatms)"
-                rm -rm $concatms
+                rm -rf $concatms
             fi
             concat_vis $concatms $@
         else
