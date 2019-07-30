@@ -174,10 +174,10 @@ def main():
     spws = config.get('yclean', 'spws').split(',')
     for spw, ns in zip(spws, nsplits):
         output = os.path.join(args.basedir, 'clean',
-                source+'.spw%i.cube' % spw)
+                source+'.spw%s.cube' % spw)
         nsub = ns + 1
         if ns==0:
-            os.system('cp finalcubes[j] output')
+            os.system('mv finalcubes[j] output')
         else:
             join_cubes(finalcubes[j:j+nsub], output, 
                     config.get('yclean','joinchans').split)
