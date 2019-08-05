@@ -351,7 +351,7 @@ function continuum_pipe () {
             if [[ -d $concatms ]]
             then
                 logger "Removing concatenated continuum file"
-                rm $concatms
+                rm -rf $concatms
             fi
             concat_vis $concatms $@
         else
