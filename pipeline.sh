@@ -257,31 +257,36 @@ function run_yclean () {
     local config="${BASE}${SRC0}.cfg"
     local casalogfile="$LOGS/casa_$(date --utc +%F_%H%M%S)_exec_yclean.log"
     
-    cd $BASE
-    if [[ $Redo -eq 1 ]] || [[ ! -d $YCLEAN ]]
+    if [[ $DOYCLEAN -eq 1 ]]
     then
-        if [[ -d $YCLEAN ]]
+        cd $BASE
+        if [[ $Redo -eq 1 ]] || [[ ! -d $YCLEAN ]]
         then
-            logger "Emptying YCLEAN directory: $YCLEAN"
-            rm -rf ${YCLEAN}/*
-            rm -rf *MASCARA.tc*
+            if [[ -d $YCLEAN ]]
+            then
+                logger "Emptying YCLEAN directory: $YCLEAN"
+                rm -rf ${YCLEAN}/*
+                rm -rf *MASCARA.tc*
+            else
+                mkdir $YCLEAN
+            fi
+            if [[ -d $CLEAN ]]
+            then
+                logger "Emptying CLEAN directory: $CLEAN"
+                rm -rf ${CLEAN}/*.cube*
+            else
+                mkdir $CLEAN
+            fi
+            logger "Running YCLEAN"
+            mpicasa -n 3 $(which casa) --logfile $casalogfile -c $script $1 $config
+            logger "YCLEAN succeded"
         else
-            mkdir $YCLEAN
+            logger "YCLEAN already ran"
         fi
-        if [[ -d $CLEAN ]]
-        then
-            logger "Emptying CLEAN directory: $CLEAN"
-            rm -rf ${CLEAN}/*.cube*
-        else
-            mkdir $CLEAN
-        fi
-        logger "Running YCLEAN"
-        mpicasa -n 3 $(which casa) --logfile $casalogfile -c $script $1 $config
-        logger "YCLEAN succeded"
+        cd -
     else
-        logger "YCLEAN already ran"
+        logger "Skipping YCLEAN"
     fi
-    cd -
 }
 
 function split_continuum () {
@@ -419,6 +424,7 @@ function main () {
 
 # Command line options
 BASE="./"
+DOYCLEAN=1
 PutRms=0
 Redo=1
 Method="max"
@@ -431,6 +437,9 @@ while [[ "$1" != "" ]]; do
                                 exit
                                 ;;
         --noredo )              Redo=0
+                                shift
+                                ;;
+        --noyclean )            DOYCLEAN=0
                                 shift
                                 ;;
         --put_rms )             PutRms=1
