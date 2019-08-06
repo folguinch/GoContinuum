@@ -1,3 +1,4 @@
+#!/bin/bash
 ###############################################################################
 ############################ The complete pipeline ############################
 ###############################################################################
@@ -12,17 +13,22 @@ sep1="==========================================================================
 sep2="--------------------------------------------------------------------------------"
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 VERBOSE=1
+STEPS=( "DIRTY" "AFOLI" "CONTSUB" "SPLIT" "YCLEAN" "PBCLEAN" )
 
 # Functions
 function usage () {
     echo "Nothing"
 }
 
+function list_steps () {
+    logger ${STEPS[@]}
+}
+
 function logger (){
     local level="INFO"
     if [[ $1 != "" ]]
     then
-        if [[ $1 == "INFO" ]] || [[ $1 == "WARN" ]] || [[ $1 == "ERROR" ]]
+        if [[ $1 == "DEBUG" ]] || [[ $1 == "INFO" ]] || [[ $1 == "WARN" ]] || [[ $1 == "ERROR" ]]
         then
             level="$1"
             shift
@@ -31,10 +37,15 @@ function logger (){
 
     if [[ $VERBOSE -eq 1 ]]
     then
+        if [[ $level != "DEBUG" ]]
+        then
+            echo "${level}: $@" | tee -a "${LOGGERFILE}"
+        fi
+    elif [[ $VERBOSE -eq 2 ]]
+    then
         echo "${level}: $@" | tee -a "${LOGGERFILE}"
     fi
 }
-
 
 function check_environment () {
     if [[ ! -d $Dirty ]]
@@ -249,7 +260,6 @@ function run_pbclean () {
             logger "Image ${imgname}.image already exists"
         fi
     fi
-
 }
 
 function run_yclean () {
@@ -257,36 +267,31 @@ function run_yclean () {
     local config="${BASE}${SRC0}.cfg"
     local casalogfile="$LOGS/casa_$(date --utc +%F_%H%M%S)_exec_yclean.log"
     
-    if [[ $DOYCLEAN -eq 1 ]]
+    cd $BASE
+    if [[ $Redo -eq 1 ]] || [[ ! -d $YCLEAN ]]
     then
-        cd $BASE
-        if [[ $Redo -eq 1 ]] || [[ ! -d $YCLEAN ]]
+        if [[ -d $YCLEAN ]]
         then
-            if [[ -d $YCLEAN ]]
-            then
-                logger "Emptying YCLEAN directory: $YCLEAN"
-                rm -rf ${YCLEAN}/*
-                rm -rf *MASCARA.tc*
-            else
-                mkdir $YCLEAN
-            fi
-            if [[ -d $CLEAN ]]
-            then
-                logger "Emptying CLEAN directory: $CLEAN"
-                rm -rf ${CLEAN}/*.cube*
-            else
-                mkdir $CLEAN
-            fi
-            logger "Running YCLEAN"
-            mpicasa -n 3 $(which casa) --logfile $casalogfile -c $script $1 $config
-            logger "YCLEAN succeded"
+            logger "Emptying YCLEAN directory: $YCLEAN"
+            rm -rf ${YCLEAN}/*
+            rm -rf *MASCARA.tc*
         else
-            logger "YCLEAN already ran"
+            mkdir $YCLEAN
         fi
-        cd -
+        if [[ -d $CLEAN ]]
+        then
+            logger "Emptying CLEAN directory: $CLEAN"
+            rm -rf ${CLEAN}/*.cube*
+        else
+            mkdir $CLEAN
+        fi
+        logger "Running YCLEAN"
+        mpicasa -n 3 $(which casa) --logfile $casalogfile -c $script $1 $config
+        logger "YCLEAN succeded"
     else
-        logger "Skipping YCLEAN"
+        logger "YCLEAN already ran"
     fi
+    cd -
 }
 
 function split_continuum () {
@@ -317,19 +322,30 @@ function concat_vis () {
     logger "Concatenation succeded"
 }
 
-function line_pipe () {
+function run_pipe () {
+    local ptype="$1"
+    logger "Running $ptype pipe"
+    shift
     local uvdatams="$1"
+    logger "DEBUG" "uvdatams = $uvdatams"
     shift
     local concatms="$@"
+    logger "DEBUG" "concatms = $concatms"
     if [[ $NEB -gt 1 ]]
     then
         concatms="${uvdatams/${SRC0}.[0-9]./${SRC0}.}"
-        concatms="${concatms}.contsub"
+        if [[ $ptype == "line" ]] 
+        then
+            concatms="${concatms}.contsub"
+        else
+            concatms="${concatms}.${2##*.}"
+        fi
+        logger "DEBUG" "setting concatms = $concatms"
         if [[ $Redo -eq 1 ]] || [[ ! -d $concatms ]]
         then
             if [[ -d $concatms ]]
             then
-                logger "Removing concatenated line file: $(basename $concatms)"
+                logger "Removing concatenated $ptype file: $(basename $concatms)"
                 rm -rf $concatms
             fi
             concat_vis $concatms $@
@@ -339,35 +355,15 @@ function line_pipe () {
         echo $sep2
     fi
 
-    # YCLEAN HERE
-    run_yclean $concatms
-}
-
-function continuum_pipe () {
-    local uvdatams="$1"
-    shift
-    local concatms="$@"
-    if [[ $NEB -gt 1 ]]
+    logger "DEBUG" "final concatms = $concatms"
+    if [[ $ptype == "line" ]]
     then
-        concatms="${uvdatams/${SRC0}.[0-9]./${SRC0}.}"
-        concatms="${concatms}.${2##*.}"
-        if [[ $Redo -eq 1 ]] || [[ ! -d $concatms ]]
-        then
-            if [[ -d $concatms ]]
-            then
-                logger "Removing concatenated continuum file"
-                rm -rf $concatms
-            fi
-            concat_vis $concatms $@
-        else
-            logger "File $(basename $concatms) already created"
-        fi
-        echo $sep2
+        # YCLEAN HERE
+        run_yclean $concatms
+    else
+        # Run pb clean
+        run_pbclean $concatms 1
     fi
-
-    # Run pb clean
-    run_pbclean $concatms 1
-
 }
 
 function main () {
@@ -415,12 +411,13 @@ function main () {
     done
     
     # For lines
-    line_pipe $uvdatams $contsubms 
+    run_pipe "line" $uvdatams $contsubms 
 
     # For continuum
-    continuum_pipe $uvdatams $splitms1
-    continuum_pipe $uvdatams $splitms2
+    run_pipe "continuum" $uvdatams $splitms1
+    run_pipe "continuum" $uvdatams $splitms2
 }
+
 
 # Command line options
 BASE="./"
@@ -439,8 +436,12 @@ while [[ "$1" != "" ]]; do
         --noredo )              Redo=0
                                 shift
                                 ;;
-        --noyclean )            DOYCLEAN=0
+        --skip )                shift
+                                SKIPSTEPS=$1
                                 shift
+                                ;;
+        --steps )               list_steps
+                                exit 1
                                 ;;
         --put_rms )             PutRms=1
                                 shift
