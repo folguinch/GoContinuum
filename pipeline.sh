@@ -12,16 +12,74 @@ set -e
 sep1="================================================================================"
 sep2="--------------------------------------------------------------------------------"
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-VERBOSE=1
 STEPS=( "DIRTY" "AFOLI" "CONTSUB" "SPLIT" "YCLEAN" "PBCLEAN" )
 
 # Functions
 function usage () {
-    echo "Nothing"
+cat <<fin
+Usage: pipeline.sh [[-h|--help]] [[--noredo]] [[-s|--silent]] [[--vv]] [[--dirty]] [[--skip] step ...] [[--put_rms]] [[--pos] x y] [[--max]] field
+
+Parameters:
+  field                 Field name
+
+Options:
+  -h, --help            Help
+  --neb                 Number of EBs
+  --noredo              Skip steps some steps already finished
+  -s, --silent          Set verbose=0 in pipeline.sh
+  --vv                  Set verbose level to debug
+  --dirty               Compute dirty images if dirty directory does not exist
+  --skip                Skip given steps (see --steps)
+  --steps               List available steps
+  --put_rms             Put rms in image headers
+  --pos                 Position where to extract spectrum
+  --max                 Use max to determine position of peak
+fin
 }
 
 function list_steps () {
     logger ${STEPS[@]}
+}
+
+function update_triggers () {
+    while [[ $# -gt 0 ]]
+    do
+        case ${1^^} in
+            DIRTY )
+                DODIRTY=0
+                shift
+                SKIP=$((SKIP+1))
+                ;;
+            AFOLI )
+                DOAFOLI=0
+                shift
+                SKIP=$((SKIP+1))
+                ;;
+            CONTSUB )
+                DOCONTSUB=0
+                shift
+                SKIP=$((SKIP+1))
+                ;;
+            SPLIT )
+                DOSPLIT=0
+                shift
+                SKIP=$((SKIP+1))
+                ;;
+            YCLEAN )
+                DOYCLEAN=0
+                shift
+                SKIP=$((SKIP+1))
+                ;;
+            PBCLEAN )
+                DOPBCLEAN=0
+                shift
+                SKIP=$((SKIP+1))
+                ;;
+            * )
+                break
+                ;;
+        esac
+    done
 }
 
 function logger (){
@@ -40,6 +98,10 @@ function logger (){
         if [[ $level != "DEBUG" ]]
         then
             echo "${level}: $@" | tee -a "${LOGGERFILE}"
+            if [[ $level == "ERROR" ]]
+            then
+                exit 0
+            fi
         fi
     elif [[ $VERBOSE -eq 2 ]]
     then
@@ -50,8 +112,13 @@ function logger (){
 function check_environment () {
     if [[ ! -d $Dirty ]]
     then
-        logger "ERROR" "Could not find dirty directory"
-        exit 1
+        if [[ DODIRTY -eq 1 ]]
+        then
+            logger "Computing dirty images"
+            get_dirty
+        else
+            logger "ERROR" "Could not find dirty directory"
+        fi
     fi
     if [[ ! -d $Plots ]]
     then
@@ -68,6 +135,22 @@ function check_environment () {
 function rms_to_header () {
     local script="$DIR/rms_to_header.py"
     casa -c $script $*
+}
+
+function get_dirty () {
+    local script="$DIR/get_dirty.py"
+    local casalogfile="$LOGS/casa_$(date --utc +%F_%H%M%S)_dirty.log"
+    local casaflags="--logfile $casalogfile -c"
+    local msfiles=( ${UVdata}/${SRC0}*.ms )
+    local config="${BASE}${SRC0}.cfg"
+    logger "DEBUG" "msfiles = ${msfiles[@]}"
+    
+    # Make directory
+    mkdir $Dirty
+
+    # Run casa
+    mpicasa -n 5 $(which casa) $casaflags $script $config $Dirty $msfiles
+    exit 1
 }
 
 function get_spectra () {
@@ -356,13 +439,19 @@ function run_pipe () {
     fi
 
     logger "DEBUG" "final concatms = $concatms"
-    if [[ $ptype == "line" ]]
+    if [[ $ptype == "line" ]] && [[ $DOYCLEAN -eq 1 ]]
     then
         # YCLEAN HERE
         run_yclean $concatms
-    else
+    elif [[ $ptype == "continuum" ]] && [[ $DOPBCLEAN -eq 1 ]]
+    then
         # Run pb clean
         run_pbclean $concatms 1
+    elif [[ $DOYCLEAN -eq 0 ]] || [[ $DOPBCLEAN -eq 0 ]]
+    then
+        logger "Skipping $ptype pipe"
+    else
+        logger "ERROR" "Pipe type not recognized: $ptype"
     fi
 }
 
@@ -418,52 +507,82 @@ function main () {
     run_pipe "continuum" $uvdatams $splitms2
 }
 
-
 # Command line options
 BASE="./"
-DOYCLEAN=1
 PutRms=0
 Redo=1
 Method="max"
 Xpos=""
 Ypos=""
 NEB=1
+SKIP=1
+VERBOSE=1
+# Task triggers
+DODIRTY=0
+DOAFOLI=1
+DCONTSUB=1
+DOSPLIT=1
+DOYCLEAN=1
+DOPBCLEAN=1
+
 while [[ "$1" != "" ]]; do
     case $1 in
-        -h | --help )           usage
-                                exit
-                                ;;
-        --noredo )              Redo=0
-                                shift
-                                ;;
-        --skip )                shift
-                                SKIPSTEPS=$1
-                                shift
-                                ;;
-        --steps )               list_steps
-                                exit 1
-                                ;;
-        --put_rms )             PutRms=1
-                                shift
-                                ;;
-        --pos )                 Method="position"
-                                shift
-                                Xpos=$1
-                                shift
-                                Ypos=$1
-                                shift
-                                ;;
-        --max )                 Method="max"
-                                shift
-                                ;;
-        --neb )                 shift
-                                NEB=$1
-                                shift
-                                ;;
-        * )                     SRC0=$1
-                                shift
-                                break
-                                ;;
+        -h | --help )           
+            usage
+            exit
+            ;;
+        --noredo )              
+            Redo=0
+            shift
+            ;;
+        -s | --silent )
+            VERBOSE=0
+            shift
+            ;;
+        --vv )
+            VERBOSE=2
+            shift
+            ;;
+        --dirty )               
+            DODIRTY=1
+            shift
+            ;;
+        --skip )                
+            shift
+            update_triggers $@
+            shift $SKIP
+            SKIP=1
+            ;;
+        --steps )               
+            list_steps
+            exit 1
+            ;;
+        --put_rms )             
+            PutRms=1
+            shift
+            ;;
+        --pos )                 
+            Method="position"
+            shift
+            Xpos=$1
+            shift
+            Ypos=$1
+            shift
+            ;;
+        --max )                 
+            Method="max"
+            shift
+            ;;
+        --neb )                 
+            shift
+            NEB=$1
+            shift
+            ;;
+        * )                     
+            SRC0=$1
+            shift
+            break
+            ;;
     esac
 done
 
