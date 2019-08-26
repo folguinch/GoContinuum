@@ -46,7 +46,7 @@ def main():
 
     config = ConfigParser({'robust':0.5, 'threshold': None, 'spws':'0,1,2,3'})
     config.read(args.configfile[0])
-    field = args.get('pbclean', 'field')
+    field = config.get('pbclean', 'field')
     imsize = map(int, config.get('pbclean', 'imsize').split())
     cellsize = str(config.get('pbclean', 'cellsize'))
     try:
