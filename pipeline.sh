@@ -9,8 +9,6 @@
 
 set -e
 
-sep1="================================================================================"
-sep2="--------------------------------------------------------------------------------"
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 STEPS=( "DIRTY" "AFOLI" "CONTSUB" "SPLIT" "YCLEAN" "PBCLEAN" )
 
@@ -42,35 +40,42 @@ function list_steps () {
 }
 
 function update_triggers () {
+    SKIP=0
     while [[ $# -gt 0 ]]
     do
         case ${1^^} in
             DIRTY )
+                logger "Unsetting ${1^^}"
                 DODIRTY=0
                 shift
                 SKIP=$((SKIP+1))
                 ;;
             AFOLI )
+                logger "Unsetting ${1^^}"
                 DOAFOLI=0
                 shift
                 SKIP=$((SKIP+1))
                 ;;
             CONTSUB )
+                logger "Unsetting ${1^^}"
                 DOCONTSUB=0
                 shift
                 SKIP=$((SKIP+1))
                 ;;
             SPLIT )
+                logger "Unsetting ${1^^}"
                 DOSPLIT=0
                 shift
                 SKIP=$((SKIP+1))
                 ;;
             YCLEAN )
+                logger "Unsetting ${1^^}"
                 DOYCLEAN=0
                 shift
                 SKIP=$((SKIP+1))
                 ;;
             PBCLEAN )
+                logger "Unsetting ${1^^}"
                 DOPBCLEAN=0
                 shift
                 SKIP=$((SKIP+1))
@@ -80,32 +85,48 @@ function update_triggers () {
                 ;;
         esac
     done
+    logger "DEBUG" "Skipping $SKIP options"
 }
 
 function logger (){
     local level="INFO"
+    local sep1="================================================================================"
+    local sep2="--------------------------------------------------------------------------------"
     if [[ $1 != "" ]]
     then
-        if [[ $1 == "DEBUG" ]] || [[ $1 == "INFO" ]] || [[ $1 == "WARN" ]] || [[ $1 == "ERROR" ]]
+        if [[ $1 == "DEBUG" ]] || [[ $1 == "INFO" ]] || [[ $1 == "WARN" ]] || 
+            [[ $1 == "ERROR" ]] || [[ $1 == "SEP" ]]
         then
             level="$1"
             shift
         fi
     fi
 
+    if [[ $level != "SEP" ]]
+    then
+        local msg="$level: $@"
+    elif [[ $1 -eq 1 ]]
+    then
+        local msg="$sep1"
+    else
+        local msg="$sep2"
+    fi
+
     if [[ $VERBOSE -eq 1 ]]
     then
         if [[ $level != "DEBUG" ]]
         then
-            echo "${level}: $@" | tee -a "${LOGGERFILE}"
+            echo "$msg" | tee -a "${LOGGERFILE}"
             if [[ $level == "ERROR" ]]
             then
                 exit 0
             fi
+        else
+            echo "$msg" >> ${LOGGERFILE}
         fi
     elif [[ $VERBOSE -eq 2 ]]
     then
-        echo "${level}: $@" | tee -a "${LOGGERFILE}"
+        echo "$msg" | tee -a "${LOGGERFILE}"
     fi
 }
 
@@ -119,6 +140,10 @@ function check_environment () {
         else
             logger "ERROR" "Could not find dirty directory"
         fi
+    elif [[ DODIRTY -eq 1 ]]
+    then
+        logger "Computing dirty images if needed"
+        get_dirty
     fi
     if [[ ! -d $Plots ]]
     then
@@ -137,20 +162,60 @@ function rms_to_header () {
     casa -c $script $*
 }
 
+function deldir () {
+    logger "WARN" "Removing directory: $1"
+    rm -rf $1
+
+    if [[ $2 != "" ]]
+    then
+        exit $2
+    fi
+}
+
 function get_dirty () {
     local script="$DIR/get_dirty.py"
     local casalogfile="$LOGS/casa_$(date --utc +%F_%H%M%S)_dirty.log"
     local casaflags="--logfile $casalogfile -c"
     local msfiles=( ${UVdata}/${SRC0}*.ms )
     local config="${BASE}${SRC0}.cfg"
+    local casa="/home/myso/opt/casa-release-5.5.0-149.el7/bin/casa"
+    local mpicasa="/home/myso/opt/casa-release-5.5.0-149.el7/bin/mpicasa"
     logger "DEBUG" "msfiles = ${msfiles[@]}"
-    
-    # Make directory
-    mkdir $Dirty
 
     # Run casa
-    mpicasa -n 5 $(which casa) $casaflags $script $config $Dirty $msfiles
-    exit 1
+    if [[ ! -d $Dirty ]]
+    then
+        mkdir $Dirty
+        set +e
+        $mpicasa -n 4 $casa $casaflags $script $config $Dirty "${msfiles[@]}"
+        if [[ $? -ge 1 ]]
+        then
+            logger "WARN" "Got error from CASA while calculating the dirty images"
+            logger "WARN" "Check and remove (if needed) files in: $Dirty"
+            exit 0
+        fi
+        set -e
+        logger "SEP" 2
+    else
+        for ms in ${msfiles[@]}
+        do
+            local fname="$(basename $ms)"
+            #local ext="${fname##*.}"
+            fname="${fname%.*}"
+            for f in ${Dirty}/${fname}*.fits
+            do
+                if [[ ! -f $f ]]
+                then
+                    logger "Computing dirty images for ms: $ms"
+                    $mpicasa -n 3 $casa $casaflags $script $config $Dirty $ms
+                else
+                    logger "Skipping dirty for ms: $ms"
+                fi
+                break
+            done
+            logger "SEP" 2
+        done
+    fi
 }
 
 function get_spectra () {
@@ -185,7 +250,7 @@ function get_continuum_channels () {
         flags="$flags --min_width 2" 
         flags="$flags --config ${BASE}${SRC0}.cfg" 
         flags="$flags --spec ${specfile} sigmaclip --sigma 3.0 1.3"
-        echo $sep2
+        logger "SEP" 2
         python $script $flags 
     done
 }
@@ -217,14 +282,14 @@ function get_peak_continuum_channels () {
                 counter=1
             fi
             # Find position of maxima
-            echo $sep2
+            logger "SEP" 2
             logger "Working on: $(basename $dirt)"
             get_spectra $dirt $specbase $posfile
         done
         logger "Extracting spectra done"
 
         # Combine peaks
-        echo $sep2
+        logger "SEP" 2
         logger "Combining peaks"
         local combposfile="${posfile/.dat/.combined.dat}"
         if [[ $Redo -eq 1 ]] || [[ ! -f $combposfile ]]
@@ -254,7 +319,7 @@ function get_peak_continuum_channels () {
     logger "Extracting spectra (2nd pass)"
     for dirt in ${Dirty}/${SRC}*.image.fits
     do
-        echo $sep2
+        logger "SEP" 2
         logger "Extracting spectra"
         logger "Working on: $(basename $dirt)"
         specbase=${dirt/.fits/}
@@ -324,7 +389,7 @@ function run_pbclean () {
                 logger "Image ${imgname}.image already exists"
             fi
             spw=$((spw + 1))
-            echo $sep2
+            logger "SEP" 2
         done
     elif [[ $2 -eq 1 ]]
     then
@@ -435,7 +500,7 @@ function run_pipe () {
         else
             logger "File $(basename $concatms) already created"
         fi
-        echo $sep2
+        echo "SEP" 2
     fi
 
     logger "DEBUG" "final concatms = $concatms"
@@ -480,7 +545,7 @@ function main () {
         fi
         logger "Working on source: $SRC"
         get_peak_continuum_channels 
-        echo $sep2
+        logger "SEP" 2
         
         # uvcontsub
         local uvdatams="${UVdata}/${SRC}*.ms"
@@ -489,14 +554,14 @@ function main () {
         contsubms="${contsubms} ${uvdatams}.contsub"
 
         # Splits
-        echo $sep2
+        logger "SEP" 2
         split_continuum "${BASE}${SRC0}.cfg" $uvdatams $chanfiles
         splitms1="${splitms1} ${uvdatams}.cont_avg"
         splitms2="${splitms2} ${uvdatams}.allchannels_avg"
 
         #run_pbclean "${uvdatams}.contsub"
         counter=$((counter + 1))
-        echo $sep1
+        logger "SEP" 1
     done
     
     # For lines
@@ -525,11 +590,21 @@ DOSPLIT=1
 DOYCLEAN=1
 DOPBCLEAN=1
 
+# Initialize logger file
+LOGS="logs"
+if [[ ! -d $LOGS ]]
+then
+    mkdir $LOGS
+fi
+LOGGERFILE="$LOGS/pipeline_debug.log"
+logger "SEP" 1
+
 while [[ "$1" != "" ]]; do
+    logger "DEBUG" "Processing cmd option: $1"
     case $1 in
         -h | --help )           
             usage
-            exit
+            exit 1
             ;;
         --noredo )              
             Redo=0
@@ -541,6 +616,7 @@ while [[ "$1" != "" ]]; do
             ;;
         --vv )
             VERBOSE=2
+            logger "Previous messages written to file"
             shift
             ;;
         --dirty )               
@@ -597,12 +673,6 @@ UVdata="${BASE}final_uvdata"
 PBclean="${BASE}pbclean"
 CLEAN="${BASE}clean"
 YCLEAN="${BASE}yclean"
-LOGS="${BASE}logs"
-if [[ ! -d $LOGS ]]
-then
-    mkdir $LOGS
-fi
-LOGGERFILE="$LOGS/pipeline_debug.log"
 
 main
 echo "QMD"
