@@ -19,16 +19,18 @@ def main():
     args = parser.parse_args()
 
     # Configuration file
-    config = ConfigParser({'robust':0.5, 'deconvolver':'hogbom',
+    config = ConfigParser({'robust':'0.5', 'deconvolver':'hogbom',
         'specmode':'cube', 'outframe':'LSRK', 'gridder':'standard',
-        'interactive':False, 'weighting':'briggs', 'niter':0, 'chancunks:-1'})
+        'interactive':'False', 'weighting':'briggs', 'niter':'0',
+        'chancunks':'-1'})
     config.read(args.configfile[0])
     section = args.section[0]
+    print args.configfile[0]
 
     # Common arguments, add as needed
     float_keys = ['robust', 'pblimit', 'pbmask'] 
     int_keys = ['niter', 'chanchunks']
-    bool_keys = ['interactive', 'parallel']
+    bool_keys = ['interactive', 'parallel', 'pbcor']
     ignore_keys = ['vis', 'imagename', 'spw']
     tclean_pars = {}
     for key in tclean.parameters.keys():
@@ -40,7 +42,7 @@ def main():
         elif key in int_keys:
             tclean_pars[key] = config.getint(section, key)
         elif key in bool_keys:
-            tclean_pars[key] = config.getbool(section, key)
+            tclean_pars[key] = config.getboolean(section, key)
         elif key=='imsize':
             tclean_pars[key] = map(int, config.get(section, key).split())
         else:
@@ -54,7 +56,8 @@ def main():
     for ms in args.uvdata:
         # Number of spws
         nspws = len(vishead(vis=ms, mode='list')['spw_name'][0])
-        casalog.post('Number os spws in ms %s: %i' % (ms, nspws))
+        casalog.post('Processing ms: %s' % ms)
+        casalog.post('Number of spws in ms %s: %i' % (ms, nspws))
 
         # Extract properties from ms file name
         msname = os.path.basename(ms.strip('/'))
@@ -84,7 +87,7 @@ def main():
             for spw in range(nspws):
                 casalog.post('Processing spw: %i' % spw)
                 imagename = '{0}/{1}.spw{2}.robust{3}'.format(args.outputdir[0],
-                        msname, spw, robust)
+                        msname, spw, tclean_pars['robust'])
                 casalog.post(imagename)
                 tclean(vis = ms,
                         #field = field,
