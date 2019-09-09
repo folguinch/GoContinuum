@@ -48,7 +48,7 @@ def main():
     config.read(args.configfile[0])
     field = config.get('pbclean', 'field')
     imsize = map(int, config.get('pbclean', 'imsize').split())
-    cellsize = str(config.get('pbclean', 'cellsize'))
+    cellsize = str(config.get('pbclean', 'cell'))
     try:
         threshold = config.get('pbclean', 'threshold')
         threshold = str(threshold)
