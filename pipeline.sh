@@ -173,7 +173,7 @@ function deldir () {
 }
 
 function get_dirty () {
-    local script="$DIR/get_dirty.py"
+    local script="$DIR/get_clean.py"
     local casalogfile="$LOGS/casa_$(date --utc +%F_%H%M%S)_dirty.log"
     local casaflags="--logfile $casalogfile -c"
     local msfiles=( ${UVdata}/${SRC0}*.ms )
@@ -358,7 +358,7 @@ function run_uvcontsub () {
 }
 
 function run_pbclean () {
-    local script="$DIR/pbclean.py"
+    local script="$DIR/get_clean.py"
     local casalogfile="$LOGS/casa_$(date --utc +%F_%H%M%S)_pbclean.log"
     local casaflags="--logfile $casalogfile -c"
     local config="${BASE}${SRC0}.cfg"
@@ -402,7 +402,7 @@ function run_pbclean () {
                 rm -rf "${imgname}.*"
             fi
             logger "Runnung pbclean"
-            mpicasa -n 5 $(which casa) $casaflags $script --nothreshold --continuum $1 $imgname $config
+            mpicasa -n 5 $(which casa) $casaflags $script --all_spws --section pbclean $config $PBclean $1
             logger "Pbclean succeded"
         else
             logger "Image ${imgname}.image already exists"
