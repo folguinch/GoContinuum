@@ -256,6 +256,8 @@ function run_yclean () {
     local script="$DIR/exec_yclean.py"
     local config="${BASE}${SRC0}.cfg"
     local casalogfile="$LOGS/casa_$(date --utc +%F_%H%M%S)_exec_yclean.log"
+    local casacmd='/home/myso/opt/casapy/bin/casa'
+    local runyclean="mpicasa -n 5 $casacmd --logfile $casalogfile -c $script $1 $config"
     
     if [[ $DOYCLEAN -eq 1 ]]
     then
@@ -278,10 +280,17 @@ function run_yclean () {
                 mkdir $CLEAN
             fi
             logger "Running YCLEAN"
-            mpicasa -n 3 $(which casa) --logfile $casalogfile -c $script $1 $config
+            $runyclean
+            #mpicasa -n 3 $casacmd --logfile $casalogfile -c $script $1 $config
             logger "YCLEAN succeded"
         else
-            logger "YCLEAN already ran"
+            if [[ $Redo -eq 0 ]] 
+            then
+                local cleanfinal=( ${BASE}/clean/${SRC0}.spw*.cube* )
+                test -e ${cleanfinal[0]} && logger "YCLEAN already ran" || $runyclean 
+            else
+                logger "YCLEAN already ran"
+            fi
         fi
         cd -
     else
@@ -292,8 +301,8 @@ function run_yclean () {
 function split_continuum () {
     local script="$DIR/split_ms.py"
     local casalogfile="$LOGS/casa_$(date --utc +%F_%H%M%S)_split_ms.log"
-    local splitfile1="${1}.cont_avg"
-    local splitfile2="${1}.allchannels_avg"
+    local splitfile1="${2}.cont_avg"
+    local splitfile2="${2}.allchannels_avg"
     if [[ $Redo -eq 1 ]] || [[ ! -d $splitfile1 ]]
     then
         if [[ -d $splitfile1 ]]
@@ -421,6 +430,7 @@ function main () {
     continuum_pipe $uvdatams $splitms1
     continuum_pipe $uvdatams $splitms2
 }
+source /home/myso/share/binary_project/maat_venv/env/bin/activate
 
 # Command line options
 BASE="./"
@@ -486,3 +496,4 @@ LOGGERFILE="$LOGS/pipeline_debug.log"
 
 main
 echo "QMD"
+deactivate
