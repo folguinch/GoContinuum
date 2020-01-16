@@ -153,7 +153,6 @@ def main():
         mol = moldata[0]
         restfreq = moldata[1]
         dirmol = os.path.join(args.basedir, 'yclean', source+'_'+mol)
-        os.system('rm -rf '+ dirmol)
         width = moldata[2]
         start = moldata[3]
         molvis = moldata[5]
@@ -165,13 +164,18 @@ def main():
         casalog.post('vis = %s' % vis)
         casalog.post('imagename = %s' % imagename)
         casalog.post('Spectral window options: %r' % moldata)
-
-        execfile(os.path.join(diryclean, 'yclean_parallel.py'))
+        
+        if os.path.isfile(imagename+'.tc_final.fits'):
+            casalog.post('Skipping: %s' % (imagename+'.tc_final.fits',))
+        else:
+            os.system('rm -rf '+ dirmol)
+            execfile(os.path.join(diryclean, 'yclean_parallel.py'))
         finalcubes += [imagename+'.tc_final.fits']
 
     # Join the cubes
     j = 0
     spws = config.get('yclean', 'spws').split(',')
+    print spws, nsplits
     for spw, ns in zip(spws, nsplits):
         output = os.path.join(args.basedir, 'clean',
                 source+'.spw%s.cube' % spw)
