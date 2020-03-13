@@ -134,7 +134,7 @@ def main():
     interpolation = 'linear'
     interactive = False
     imsize = map(int, config.get(section, 'imsize').split())
-    cell = str(config.get(section, 'cellsize'))
+    cell = str(config.get(section, 'cell'))
     weighting = 'briggs'
     robust = config.getfloat('yclean', 'robust')
     deconvolver = 'multiscale' 

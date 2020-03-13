@@ -1,4 +1,5 @@
-import os, argparse
+import argparse
+import os
 from ConfigParser import ConfigParser
 
 def main():

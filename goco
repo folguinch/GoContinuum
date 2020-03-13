@@ -1,0 +1,348 @@
+#!/bin/bash
+################################################################################
+#                       ALMA Data reduction pipeline                           #
+#                                                                              #
+# Produce ALMA continuum and data cubes. This program performs continuum       #
+# channel identification and performs continuum subtraction to produce the     #
+# data products.                                                               #
+#                                                                              #
+# Change History                                                               #
+# 2019/01/16  Fernando Olguin   Initial version.                               #
+#             Patricio Sanhueza                                                #
+#                                                                              #
+################################################################################
+################################################################################
+################################################################################
+
+# Bash options
+set -e
+
+################################################################################
+# Usage                                                                        #
+################################################################################
+function usage ()
+{
+    # Print usage and exit with error
+    cat <<fin
+Usage: pipeline.sh [-h|--help] [--noredo] [-s|--silent] [--vv] [--dirty] [--skip step [step ...]] [--put_rms] [--pos x y] [--max] field
+
+Parameters:
+  field                 Field name
+
+Options:
+  -h, --help            Help
+  --neb                 Number of EBs
+  --noredo              Skip steps some steps already finished
+  -s, --silent          Set verbose=0 in pipeline.sh
+  --vv                  Set verbose level to debug
+  --dirty               Compute dirty images if dirty directory does not exist
+  --skip                Skip given steps (see --steps)
+  --steps               List available steps
+  --put_rms             Put rms in image headers
+  --pos                 Position where to extract spectrum
+  --max                 Use max to determine position of peak
+fin
+    exit 1
+}
+
+################################################################################
+# Help                                                                         #
+################################################################################
+function Help()
+{
+    # Show instruction in README.md
+    less $DIR/README.md
+    exit
+}
+
+################################################################################
+# List the available steps and exit                                            #
+################################################################################
+function list_steps () 
+{
+    logger ${STEPS[@]}
+    exit
+}
+
+################################################################################
+# Unset triggers from skip                                                     #
+################################################################################
+function update_triggers () 
+{
+    # First argument is how many arguments to skip from cmd line
+    local skip=$1
+    shift $skip
+    
+    while [[ $# -gt 0 ]]
+    do
+        case ${1^^} in
+            DIRTY )
+                logger "Unsetting ${1^^}"
+                DODIRTY=0
+                shift
+                OPTIND=$((OPTIND+1));;
+            AFOLI )
+                logger "Unsetting ${1^^}"
+                DOAFOLI=0
+                shift
+                OPTIND=$((OPTIND+1));;
+            CONTSUB )
+                logger "Unsetting ${1^^}"
+                DOCONTSUB=0
+                shift
+                OPTIND=$((OPTIND+1));;
+            SPLIT )
+                logger "Unsetting ${1^^}"
+                DOSPLIT=0
+                shift
+                OPTIND=$((OPTIND+1));;
+            YCLEAN )
+                logger "Unsetting ${1^^}"
+                DOYCLEAN=0
+                shift
+                OPTIND=$((OPTIND+1));;
+            PBCLEAN )
+                logger "Unsetting ${1^^}"
+                DOPBCLEAN=0
+                shift
+                OPTIND=$((OPTIND+1));;
+            * )
+                break;;
+        esac
+    done
+}
+
+################################################################################
+# Check directories exist                                                      #
+################################################################################
+function check_environment () 
+{
+    if [[ ! -d $DIRTY ]]
+    then
+        if [[ $DODIRTY -eq 1 ]]
+        then
+            logger "Computing dirty images"
+            get_dirty
+        else
+            logger "ERROR" "Could not find dirty directory"
+        fi
+    elif [[ $DODIRTY -eq 1 ]]
+    then
+        logger "Computing dirty images if needed"
+        get_dirty
+    fi
+    if [[ ! -d $PLOTS ]]
+    then
+        logger "Creating plots directory"
+        mkdir $PLOTS
+    fi
+    if [[ ! -d $PBCLEAN ]]
+    then
+        logger "Creating pbclean directory"
+        mkdir $PBCLEAN
+    fi
+}
+
+################################################################################
+# Main                                                                         #
+################################################################################
+function main () 
+{
+    # Check that all the directories exist
+    check_environment
+
+    # Put the rms in header
+    if [[ $PUTRMS -eq 1 ]]
+    then
+        rms_to_header ${DIRTY}/${SRC0}*.image
+    fi
+    
+    # Initial channel windows from peak
+    local counter=1
+    local contsubms=""
+    local splitms1=""
+    local splitms2=""
+    while [[ $counter -le $NEB ]]
+    do
+        if [[ $NEB -gt 1 ]]
+        then
+            SRC="${SRC0}.${counter}"
+        fi
+        logger "Working on source: $SRC"
+        get_peak_continuum_channels 
+        logger "SEP" 2
+        
+        # uvcontsub
+        local uvdatams="${UVDATA}/${SRC}*.ms"
+        local chanfiles="${DIRTY}/${SRC}*.chanfile.txt"
+        run_uvcontsub $uvdatams $chanfiles
+        contsubms="${contsubms} ${uvdatams}.contsub"
+
+        # Splits
+        logger "SEP" 2
+        split_continuum "${BASE}${SRC0}.cfg" $uvdatams $chanfiles
+        splitms1="${splitms1} ${uvdatams}.cont_avg"
+        splitms2="${splitms2} ${uvdatams}.allchannels_avg"
+
+        #run_pbclean "${uvdatams}.contsub"
+        counter=$((counter + 1))
+        logger "SEP" 1
+    done
+    
+    # For lines
+    run_pipe "line" $uvdatams $contsubms 
+
+    # For continuum
+    run_pipe "continuum" $uvdatams $splitms1
+    run_pipe "continuum" $uvdatams $splitms2
+}
+
+################################################################################
+################################################################################
+# Main program                                                                 #
+################################################################################
+################################################################################
+
+##source /home/myso/share/binary_project/maat_venv/env/bin/activate
+# Initialize variables
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+BASE="./"
+OPTSPEC=":hsn:b:-:"
+REDO=1
+VERBOSE=1
+PUTRMS=0
+METHOD="max"
+XPOS=""
+YPOS=""
+NSPW=4
+NEB=1
+NPROC=5
+
+# Default task triggers
+STEPS=( "DIRTY" "AFOLI" "CONTSUB" "SPLIT" "YCLEAN" "PBCLEAN" )
+DODIRTY=1
+DOAFOLI=1
+DOCONTSUB=1
+DOSPLIT=1
+DOYCLEAN=1
+DOPBCLEAN=1
+
+# Setup logger
+# Initialize logger file
+LOGS="logs"
+if [[ ! -d $LOGS ]]
+then
+    mkdir $LOGS
+fi
+LOGGERFILE="$LOGS/goco_debug.log"
+
+# Source utils
+source $DIR/utils.sh
+logger "SEP" 1
+
+################################################################################
+# Process the input options. Add options as needed.                            #
+################################################################################
+# Get the options
+while getopts $OPTSPEC option; do
+    if [[ $option == "-" ]]
+    then
+        opt="$OPTARG"
+        if [[ ${!OPTIND} == -* ]] 
+        then
+            OPTARG=":"
+        else
+            OPTARG="${!OPTIND}"
+        fi
+    else
+        opt="$option"
+    fi
+    case $opt in
+        h | help ) # display Help
+            Help;;
+        noredo ) # Change REDO
+            REDO=0;;
+        s | silent ) # Decrease verbose level
+            VERBOSE=0;;
+        b | base ) # Base directory
+            BASE="$OPTARG"
+            if [[ $opt == "base" ]]
+            then
+                OPTIND=$((OPTIND+1))
+            fi;;
+        n | nproc ) # Number of processes for parallel
+            NPROC="$OPTARG"
+            if [[ $opt == "nproc" ]]
+            then
+                OPTIND=$((OPTIND+1))
+            fi;;
+        nspw ) # Number of spectral windows
+            NSPW=$OPTARG
+            logger "Number of spws: $NSPW"
+            OPTIND=$((OPTIND+1));;
+        vv ) # Increase verbose level
+            VERBOSE=2
+            logger "Previous messages written to file";;
+        dirty ) # Perform dirty 
+            DODIRTY=1;;
+        skip ) # Skip given steps
+            update_triggers $OPTIND $@;;
+        steps ) # Print steps and exit
+            list_steps;;
+        put_rms ) # Put RMS in images          
+            PUTRMS=1;;
+        pos ) # Give source position
+            METHOD="position"
+            XPOS=$OPTARG
+            OPTIND=$((OPTIND+1))
+            YPOS=${!OPTIND}
+            logger "DEBUG" "Setting position to $XPOS, $YPOS"
+            OPTIND=$((OPTIND+1));;
+        neb ) # Number of EBs
+            NEB=$OPTARG
+            logger "DEBUG" "Number of EBs: $NEB"
+            OPTIND=$((OPTIND+1));;
+        \? ) # incorrect option
+            echo "ERROR: Invalid option: -$OPTARG"
+            usage;;
+        : ) # invalid argument
+            echo "ERROR: -$OPTARG requires an argument"
+            usage;;
+        * ) # invalid long anrguments
+            echo "ERROR: Invalid option: --$opt"
+            usage;;
+   esac
+done
+shift $((OPTIND-1))
+SRC0=$1
+logger "Source: $SRC0"
+
+# In case someone puts the field at the beginning
+if [[ $2 != "" ]] || [[ $SRC0 == "" ]]
+then
+    usage
+fi
+
+# Environment setup
+#if [[ $BASE != "" ]]
+#then
+#    BASE="${BASE}/"
+#fi
+SRC="${SRC0}"
+CONFIG="${BASE}/${SRC0}.cfg"
+DIRTY="${BASE}/dirty"
+PLOTS="${BASE}/plots"
+UVDATA="${BASE}/uvdata"
+PBCLEAN="${BASE}/pbclean"
+CLEAN="${BASE}/clean"
+YCLEAN="${BASE}/yclean"
+#CASA="$(which casa)"
+#MPICASA="$(which mpicasa) -n $NPROC $CASA"
+CASA="/home/myso/opt/casa-release-5.4.0-68.el7/bin/casa"
+MPICASA="/home/myso/opt/casa-release-5.4.0-68.el7/bin/mpicasa -n $NPROC $CASA"
+
+logger "DEBUG" "$(declare -p | grep "declare -- *")"
+source ${DIR}/functions.sh
+main
+echo "QMD"
+#deactivate
