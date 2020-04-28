@@ -78,8 +78,12 @@ def find_continuum(spec, sigma_lower=3.0, sigma_upper=1.3, niter=None,
         spec.mask[-edges:] = True
 
     # Filter data
-    specfil = sigma_clip(spec, sigma_lower=sigma_lower, 
-            sigma_upper=sigma_upper, iters=niter, cenfunc=cenfunc)
+    try:
+        specfil = sigma_clip(spec, sigma_lower=sigma_lower, 
+                sigma_upper=sigma_upper, iters=niter, cenfunc=cenfunc)
+    except TypeError:
+        specfil = sigma_clip(spec, sigma_lower=sigma_lower, 
+                sigma_upper=sigma_upper, maxiters=niter, cenfunc=cenfunc)
     if log:
         nfil = np.ma.count_masked(specfil)
         ntot = specfil.data.size
@@ -410,8 +414,13 @@ def get_sigma_clip_steps(spec, sigma_lower, sigma_upper, cenfunc='median'):
     npoints = []
     i = 1
     while True:
-        filtered = sigma_clip(spec, sigma_lower=sigma_lower,
-                sigma_upper=sigma_upper, iters=i, cenfunc=cenfunc)
+        try:
+            filtered = sigma_clip(spec, sigma_lower=sigma_lower,
+                    sigma_upper=sigma_upper, iters=i, cenfunc=cenfunc)
+        except TypeError:
+            filtered = sigma_clip(spec, sigma_lower=sigma_lower,
+                    sigma_upper=sigma_upper, maxiters=i, cenfunc=cenfunc)
+
         npoint = np.sum(~filtered.mask)
         if len(npoints)==0 or npoints[-1]!=npoint:
             npoints += [npoint]

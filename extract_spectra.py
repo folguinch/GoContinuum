@@ -56,6 +56,8 @@ def _max_collapse(cubelist, rms=None, filename=None, get_cubes=True):
         # Load cube
         logger.info('Finding max image for: %s', os.path.basename(cfile))
         cube = fits.open(os.path.expanduser(cfile))[0]
+        if cube.data.ndim == 3:
+            cube.data = np.expand_dims(cube.data, axis=0)
         if get_cubes:
             cubes += [cube]
 
