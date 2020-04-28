@@ -171,9 +171,17 @@ function main ()
         logger "Working on source: $SRC"
         get_peak_continuum_channels 
         logger "SEP" 2
+
+        # uv mses
+        local uvdatams="${UVDATA}/${SRC}*.ms"
+        local aux=( $uvdatams ) 
+        if [[ ${#aux[@]} -ne 1 ]]
+        then
+            # Exit if there are more than 1 ms
+            logger "ERROR" "More than 1 ms in ${UVDATA}"
+        fi
         
         # uvcontsub
-        local uvdatams="${UVDATA}/${SRC}*.ms"
         local chanfiles="${DIRTY}/${SRC}*.chanfile.txt"
         run_uvcontsub $uvdatams $chanfiles
         contsubms="${contsubms} ${uvdatams}.contsub"

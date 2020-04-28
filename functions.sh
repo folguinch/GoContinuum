@@ -337,8 +337,7 @@ function run_uvcontsub ()
     local script="$DIR/run_uvcontsub.py"
     local logfile="$LOGS/casa_$(date --utc +%F_%H%M%S)_run_uvcontsub.log"
     local cmd="$CASA --logfile $logfile -c $script"
-    echo "$1.contsub"
-    echo $REDO
+
     if [[ $REDO -eq 1 ]] || [[ ! -d "$1.contsub" ]]
     then
         if [[ -d "$1.contsub" ]]
@@ -427,7 +426,7 @@ function run_pipe ()
         else
             logger "File $(basename $concatms) already created"
         fi
-        echo "SEP" 2
+        logger "SEP" 2
     fi
 
     logger "DEBUG" "final concatms = $concatms"
