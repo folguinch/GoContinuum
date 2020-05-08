@@ -297,7 +297,7 @@ while getopts $OPTSPEC option; do
             update_triggers $OPTIND $@;;
         steps ) # Print steps and exit
             list_steps;;
-        put_rms ) # Put RMS in images          
+        put_rms ) # Put RMS in dirty images          
             PUTRMS=1;;
         pos ) # Give source position
             METHOD="position"

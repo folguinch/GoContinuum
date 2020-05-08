@@ -95,6 +95,7 @@ function run_pbclean ()
     local cmd="$MPICASA $casaflags $script"
     if [[ $2 -eq 0 ]]
     then
+        ## THIS SECTION NEEDS REVIEW
         local spw=0
         while [[ $spw -le $((NSPW-1)) ]]
         do
@@ -125,20 +126,23 @@ function run_pbclean ()
         done
     elif [[ $2 -eq 1 ]]
     then
-        local imgname="${PBCLEAN}/$(basename $1)"
-        if [[ $REDO -eq 1 ]] || [[ ! -d "${imgname}.image" ]]
+        local imgbase="$(basename $1)"
+        imgbase="${imgbase/.ms./.}"
+        imgbase="${PBCLEAN}/$imgbase"
+        local imgname=${imgbase}.robust*.image
+        if [[ $REDO -eq 1 ]] || [ ! -d ${imgname} ]
         then
-            if [[ -d "${imgname}.image" ]]
+            if [[ -d "${imgname}" ]]
             then
-                logger "Removing pb cleaned image: $(basename $imgname)"
-                deldir "${imgname}.*"
+                logger "Removing pb cleaned image: $(basename $imgbase).*"
+                deldir "${imgbase}.*"
             fi
             logger "Running pbclean"
             local flags="--all_spw --section pbclean"
             $cmd $flags $CONFIG $PBCLEAN $1
             logger "Pbclean succeded"
         else
-            logger "Image ${imgname}.image already exists"
+            logger "Image ${imgname} already exists"
         fi
     fi
 }
@@ -152,7 +156,7 @@ function run_yclean ()
     local logfile="$LOGS/casa_$(date --utc +%F_%H%M%S)_exec_yclean.log"
     local casaflags="--logfile $logfile -c"
     local cmd="$MPICASA $casaflags $script $1 $CONFIG"
-    local cleanfinal=( ${CLEAN}/${SRC0}.spw*.cube* )
+    local finalimages=( ${CLEAN}/${SRC0}*.cube.image )
     
     cd $BASE
     if [[ $REDO -eq 1 ]] || [[ ! -d $YCLEAN ]]
@@ -165,7 +169,7 @@ function run_yclean ()
         else
             mkdir $YCLEAN
         fi
-        if [[ -d $CLEAN ]] && [[ -e ${cleanfinal[0]} ]]
+        if [[ -d $CLEAN ]] && [[ -e ${finalimages[0]} ]]
         then
             logger "WARN" "Emptying CLEAN directory: $CLEAN"
             rm -r ${CLEAN}/${SRC0}*.cube*
@@ -174,12 +178,19 @@ function run_yclean ()
             mkdir $CLEAN
         fi
         logger "Running YCLEAN"
+        set +e
         $cmd
+        set -e
         logger "YCLEAN succeded"
     else
         if [[ $REDO -eq 0 ]] 
         then
-            test -e ${cleanfinal[0]} && logger "YCLEAN already ran" || $cmd
+            cmd="$MPICASA $casaflags $script --resume $1 $CONFIG"
+            #test -e ${finalimages[0]}  && logger "YCLEAN already ran" || $cmd
+            logger "Resuming YCLEAN"
+            set +e
+            $cmd
+            set -e
         else
             logger "YCLEAN already ran"
         fi
@@ -249,7 +260,7 @@ function get_peak_continuum_channels ()
         logger "Extracting spectra (1st pass)"
         for dirt in ${DIRTY}/${SRC}*.image.fits
         do
-            local specbase=${dirt/.fits/}
+            local specbase=${dirt/.fits/.max}
             if [[ $counter -eq 0 ]]
             then
                 # Peak positions files
@@ -280,6 +291,11 @@ function get_peak_continuum_channels ()
         local combposfile="${posfile/.dat/.combined.dat}"
         if [[ $REDO -eq 1 ]] || [[ ! -f $combposfile ]]
         then
+            if [[ -f $combposfile ]]
+            then
+                logger "WARN" "Removing $combposfile"
+                rm $combposfile
+            fi
             combine_peaks $posfile $combposfile
             logger "Done combining peaks"
         else
@@ -312,13 +328,38 @@ function get_peak_continuum_channels ()
         logger "SEP" 2
         logger "Extracting spectra"
         logger "Working on: $(basename $dirt)"
-        specbase=${dirt/.fits/}
-        get_spectra $dirt $specbase
+        specbase=${dirt/.fits/.final}
+
+        # Check existance
+        local specfile="${specbase}.p0spec.dat"
+        if [[ $REDO -eq 1 ]] || [[ ! -f $specfile ]]
+        then
+            if [[ -f $specfile ]]
+            then
+                logger "WARN" "Removing $specfile"
+                rm $specfile
+            fi
+            get_spectra $dirt $specbase
+        elif [[ $REDO -eq 0 ]]
+        then
+            logger "Skipping spectrum extraction"
+        fi
         
         # Run AFOLI
         logger "Getting continuum channels"
-        local specfiles="${specbase}.p0spec.dat"
-        get_continuum_channels $specfiles
+        local chanfile="${specfile/.dat/.chanfile.txt}"
+        if [[ $REDO -eq 1 ]] || [[ ! -f $chanfile ]]
+        then
+            if [[ -f $chanfile ]]
+            then
+                logger "WARN" "Removing $chanfile"
+                rm $chanfile
+            fi
+            get_continuum_channels $specfile
+        elif [[ $REDO -eq 0 ]]
+        then
+            logger "Skipping AFOLI"
+        fi
     done
     logger "Done with AFOLI"
 
