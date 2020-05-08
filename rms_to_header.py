@@ -25,7 +25,7 @@ def put_rms(imagename, box=''):
     # Put in header
     imhead(imagename=imagename, mode='put', hdkey='rms',
             hdvalue=rms)
-    casalog.post('Image rms: '+rms*1E3+' mJy/beam')
+    casalog.post('Image rms: %f mJy/beam' % (rms*1E3,))
 
 def main():
     # Command line options
