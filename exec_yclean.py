@@ -1,68 +1,165 @@
 import os, argparse, sys
 from ConfigParser import ConfigParser
 from ConfigParser import NoOptionError
-from collections import Counter
+from collections import Counter, OrderedDict
 import time
 
 import scipy
 import scipy.ndimage
 import numpy as np
 
+def split_option(cfg, sect, opt, ignore_sep=[], dtype=None):
+    """Split values from configuration option value
+
+    The program will use the "," separator first to split the data, if
+    unseccessful it will use space.
+
+    Parameters:
+        cfg (str): Configuration parser
+        sect (str): Section
+        opt (str): Option
+    Optional:
+        ignore_sep (list): Ignore separator (use if "," is allowed in value)
+        dtype (function): Map values to dtype
+    """
+    # Original value
+    val = cfg.get(sect, opt)
+
+    # Use coma first
+    if ',' in val:
+        vals = val.split(',')
+    else:
+        vals = val.split()
+
+    # Map dtype
+    if dtype is not None:
+        vals = map(dtype, vals)
+    
+    return vals
+
 def get_nchans(chanrange):
+    """Dtermine the number of channels from a channel range
+
+    Parameters:
+        chanrange (str): Channel range
+    """
     i, f = map(int, chanrange.split('~'))
     return abs(f-i) + 1
 
-def fill_molecules(s, j, freq, chanrange):
-    spw = 'spw%s' % s
+def fill_molecule(nspw, ind, freq, chanrange):
+    """Deprecated
+    """
+    spw = 'spw%s' % nspw
     try:
         start = int(chanrange.split('~')[0])
-        name = 'spw%s_%i' % (s, j+1)
+        name = 'spw%s_%i' % (nspw, ind+1)
         nchan = get_nchans(chanrange)
     except ValueError:
         start = ''
         name = spw
         nchan = -1
 
-    return [name, freq, '', start, nchan, spw, s]
+    return [name, freq, '', start, nchan, spw, nspw]
 
-def get_windows(conf):
-    spws = conf.get('yclean', 'spws').split(',')
-    freqs = conf.get('yclean', 'restfreqs').split()
-    if len(spws)!=len(freqs) and conf.get('yclean', 'restfreqs')=='':
-        freqs = ['']*len(spws)
-    elif len(spws)!=len(freqs):
-        casalog.post('Length of frequencies does not match length of spws',
-                'WARN')
-        casalog.post('Ignoring frequencies', 'WARN')
-        freqs = ['']*len(spws)
+def fill_window(chanranges, **kwargs):
+    # Check basename
+    basename = kwargs.setdefault('name', 'spw%s' % (kwargs['spw'],))
+    if basename=='':
+        kwargs['name'] = 'spw%s' % kwargs['spw']
+
+    # Fill information
+    window = []
+    for i, chanran in enumerate(chanranges):
+        info = {'width':'', 'basename':kwargs['name']}
+        info.update(kwargs)
+        
+        # Fill info
+        try:
+            info['start'] = int(chanran.split('~')[0])
+            info['nchan'] = get_nchans(chanran)
+            # Update name
+            if len(chanranges)>1:
+                info['name'] = info['name'] + '_%i' % (i+1,)
+        except ValueError:
+            info['start'] = ''
+            info['nchan'] = -1
+
+        window += [info]
+
+    return window
+
+def fill_names(vals, spws, default='spw'):
+    """Create name base
+    """
+    if len(vals)==0:
+        base = default
     else:
-        freqs = [f if f.lower()!='none' else '' for f in freqs]
-    assert len(freqs)==len(spws)
-    exclude_opts = ['chanranges', 'chanrange']
-    filter_opts = ['chanrange' in opt and opt not in exclude_opts \
-            for opt in conf.options('yclean')]
-    if any(filter_opts):
-        molecules = []
-        nsplits = []
-        for spw in spws:
-            try:
-                chanranges = conf.get('yclean', 'chanrange%s' % spw).split()
-            except NoOptionError:
-                chanranges = conf.get('yclean', 'chanrange').split()
-            molecules += [fill_molecules(spw, j, freqs[int(spw)], chran) \
-                    for j,chran in enumerate(chanranges)]
-            nsplits += [len(chanranges)-1]
-    else:
-        if 'chanranges' in conf.options('yclean'):
-            chanranges = conf.get('yclean', 'chanranges').split()
+        base = vals[0]
+
+    return ['%s%s' % (base, spw) for spw in spws]
+
+def match_length(cfg, sect, opt, match, filler='', fillerfn=None):
+    """Read values from configuration and match the length to match
+    """
+    # Fill function:
+    def _fill(val):
+        if fillerfn is not None:
+            return fillerfn(val, match)
         else:
-            chanranges = conf.get('yclean', 'chanrange').split()
-        molecules = [fill_molecules(spw, j, frq, chran) \
-                for spw, frq in zip(spws, freqs) \
-                for j,chran in enumerate(chanranges)]
-        nsplits = [len(chanranges)-1]*len(spws)
-            
-    return molecules, nsplits
+            return [filler]*len(match)
+
+    # Original values
+    vals = split_option(cfg, sect, opt)
+    nvals = len(vals)
+
+    # Match size
+    nmatch = len(match)
+    if nvals!=nmatch and nvals==0:
+        # Value was not set
+        vals = _fill(vals)
+    elif nvals!=nmatch:
+        # Value was set but with incorrect value
+        casalog.post('Length of %s does not match with pattern' % opt,
+                'WARN')
+        casalog.post('Ignoring %s' % opt, 'WARN')
+        vals = _fill(vals)
+    else:
+        # Match but check for none
+        vals = [val if val.lower()!='none' else filler for val in vals]
+    assert len(vals) == nmatch
+
+    return vals
+        
+
+def get_windows(conf, section='yclean'):
+    """
+    """
+
+    # Spectral windows and frequencies
+    spws = split_option(conf, section, 'spws')
+    freqs = match_length(conf, section, 'restfreqs', spws)
+    bnames = match_length(conf, section, 'names', spws, fillerfn=fill_names)
+
+    # Iterate over spectral windows
+    nsplits = []
+    windows = []
+    info0 = ['spw', 'freq', 'name']
+    for info in zip(spws, freqs, bnames):
+        # Get channel ranges
+        spw = info[0]
+        if 'chanrange%s' % spw in conf.options(section):
+            key = 'chanrange%s' % (spw,)
+            chanrans = split_option(conf, section, key)
+        elif 'chanranges' in conf.options('yclean'):
+            chanrans = split_option(conf, section, 'chanranges')
+        else:
+            chanrans = split_option(conf, section, 'chanrange')
+        nsplits += [len(chanrans)-1]
+        
+        # Fill the window information
+        windows += fill_window(chanrans, **dict(zip(info0,info)))
+
+    return windows, nsplits
 
 def crop_spectral_axis(chans, outfile):
     s = ia.summary()
@@ -71,29 +168,73 @@ def crop_spectral_axis(chans, outfile):
     aux = ia.crop(outfile=outfile, axes=ind, chans=chans)
     aux.close()
 
-def join_cubes(inputs, output, channels):
+def put_rms(imagename, box=''):
+    rms = imhead(imagename=imagename, mode='get', hdkey='rms')
+    if rms is not False:
+        casalog.post('rms already in header')
+        casalog.post('Image rms: %f mJy/beam' % (rms*1E3,))
+        return
+
+    # Get rms
+    casalog.post('Computing rms for: ' + imagename)
+    stats = imstat(imagename=imagename, box=box, stokes='I')
+    if box=='':
+        rms = 1.482602219*stats['medabsdevmed'][0]
+    else:
+        rms = stats['rms'][0]
+
+    # Put in header
+    imhead(imagename=imagename, mode='put', hdkey='rms',
+            hdvalue=rms)
+    casalog.post('Image rms: %f mJy/beam' % (rms*1E3,))
+
+def join_cubes(inputs, output, channels, resume=False):
+    """Join cubes at specific channels
+    """
     assert len(channels)==len(inputs)
-    # Crop images
-    for i,(chans,inp) in enumerate(zip(channels, inputs)):
-        ia.open(os.path.expanduser(inp))
-        img_name = 'temp%i.image' % i
-        aux = crop_spectral_axis(chans, img_name)
+
+    # Concatenated image
+    imagename = os.path.expanduser(output)
+
+    # Join
+    if resume and os.path.isdir(imagename):
+        casalog.post('Skipping concatenated image: %s' % imagename)
+    else:
+        if os.path.isdir(imagename):
+            os.system('rm -rf %s' % imagename)
+        # Crop images
+        for i,(chans,inp) in enumerate(zip(channels, inputs)):
+            ia.open(os.path.expanduser(inp))
+            img_name = 'temp%i.image' % i
+            if os.path.isdir(img_name):
+                os.system('rm -rf temp*.image')
+            aux = crop_spectral_axis(chans, img_name)
+            ia.close()
+
+            if i==0:
+                filelist = img_name
+            else:
+                filelist += ' '+img_name 
+
+        # Concatenate
+        ia.imageconcat(outfile=imagename, infiles=filelist)
         ia.close()
 
-        if i==0:
-            filelist = img_name
-        else:
-            filelist += ' '+img_name 
+    # Put rms
+    put_rms(imagename)
 
-    # Concatenate
-    imagename = os.path.expanduser(output)+'.image'
-    ia.imageconcat(outfile=imagename, infiles=filelist)
-    exportfits(imagename=imagename, 
-            fitsimage=imagename.replace('.image','.fits'))
-    ia.close()
+    # Export fits
+    if resume and os.path.isfile(imagename+'.fits'):
+        casalog.post('Skipping FITS export')
+    else:
+        exportfits(imagename=imagename, fitsimage=imagename+'.fits',
+                overwrite=True)
 
+    # Clean up
     casalog.post('Cleaning up')
     os.system('rm -rf temp*.image')
+
+    return True
 
 def main():
     # Command line options
@@ -102,90 +243,143 @@ def main():
             help='Casa parameter.')
     parser.add_argument('--basedir', default='', type=str,
             help='Base directory')
+    parser.add_argument('--resume', action='store_true',
+            help='Resume if files are in yclean directory')
     parser.add_argument('uvdata', nargs=1, type=str,
             help='uv data ms')
     parser.add_argument('configfile', nargs=1, type=str,
             help='Configuration file name')
     args = parser.parse_args()
 
-    config = ConfigParser({'restfreqs':'', 'chanrange':'~', 'robust':'0.5'})
+    # Configuration
+    config_defaults = {'restfreqs':'', 'chanrange':'~', 'names':''}
+    tclean_defaults = {'gridder':'standard', 'specmode':'cube', 'robust':'0.5',
+            'outframe':'LSRK', 'interpolation':'linear', 'weighting':'briggs',
+            'deconvolver':'multiscale', 'scales':'0,5,15', 'chanchunks':'2',
+            'limitmasklevel':'4.0', 'pblimit':'0.2'}
+    config_defaults.update(tclean_defaults)
+    config = ConfigParser(config_defaults)
     config.read(args.configfile[0])
     section = 'yclean'
 
-    source = config.get('yclean', 'field')
-    vlsrsource = config.getfloat('yclean', 'vlsr')
+    # Source data
+    source = config.get(section, 'field')
+    vlsrsource = config.getfloat(section, 'vlsr')
     phasecenter = ''
     uvtaper = ''
 
-    # INFO DIRECTORIES
+    # Directories
     dirvis = os.path.dirname(args.uvdata[0])
     diryclean = os.path.expanduser(config.get(section, 'dir'))
     execfile(os.path.join(diryclean, "def_domask_lines.py"))
     execfile(os.path.join(diryclean, 'secondMaxLocal.py'))
 
     # Spectral setup
-    molecules, nsplits = get_windows(config)
+    wins, nsplits = get_windows(config)
 
     # Clean options
-    gridder = 'standard'
+    gridder = config.get(section, 'gridder')
+    casalog.post('Gridder = %s' % gridder)
     wprojplanes = None 
-    specmode = 'cube'
-    outframe = 'LSRK'
-    interpolation = 'linear'
+    specmode = config.get(section, 'specmode')
+    casalog.post('Specmode = %s' % specmode)
+    outframe = config.get(section, 'outframe')
+    casalog.post('Outframe = %s' % outframe)
+    interpolation = config.get(section, 'interpolation')
     interactive = False
     imsize = map(int, config.get(section, 'imsize').split())
-    cell = str(config.get(section, 'cell'))
-    weighting = 'briggs'
-    robust = config.getfloat('yclean', 'robust')
-    deconvolver = 'multiscale' 
-    scales = [0,5,15]
+    casalog.post('Imsize = %r' % imsize)
+    cell = config.get(section, 'cell')
+    casalog.post('Cell size = %s' % cell)
+    weighting = config.get(section, 'weighting')
+    robust = config.getfloat(section, 'robust')
+    casalog.post('Robust = %s' % robust)
+    deconvolver = config.get(section, 'deconvolver')
+    casalog.post('Deconvolver = %s' % deconvolver)
+    if deconvolver == 'multiscale':
+        scales = map(int, split_option(config, section, 'scales'))
+        casalog.post('Scales = %r' % scales)
+    else:
+        scales = []
     #rms = 5.7e-3
     #peak_int = 0.136# these variables are not used apparently
     #SN_ratio =  26 # these variables are not used apparently
-    chanchunks = 2
-    limitMaskLevel = 4.0
-    pblimit = .2
+    chanchunks = config.getint(section, 'chanchunks')
+    limitMaskLevel = config.getfloat(section, 'limitmasklevel')
+    pblimit = config.getfloat(section, 'pblimit')
 
     # Run YCLEAN
-    finalcubes = []
-    for moldata in molecules:
+    finalcubes = OrderedDict()
+    for win in wins:
         it = 0
-        mol = moldata[0]
-        restfreq = moldata[1]
-        dirmol = os.path.join(args.basedir, 'yclean', source+'_'+mol)
-        width = moldata[2]
-        start = moldata[3]
-        molvis = moldata[5]
-        nchan = int(moldata[4])
-        spwline = moldata[6]
-        casalog.post("Procesing %s" % mol)
+        # Directory
+        name = win['name']
+        dirit = os.path.join(args.basedir, 'yclean', source+'_'+name)
+        casalog.post("Procesing %s" % name)
+
+        # Other clean values
+        #molvis = moldata[5]
         vis = args.uvdata[0]
-        imagename = os.path.join(dirmol, 'auto'+source+'_'+mol+'.12m')
+        restfreq = win['freq']
+        width = win['width']
+        start = win['start']
+        nchan = int(win['nchan'])
+        spwline = win['spw']
+        imagename = os.path.join(dirit, 'auto'+source+'_'+name+'.12m')
+
+        # Log
         casalog.post('vis = %s' % vis)
         casalog.post('imagename = %s' % imagename)
-        casalog.post('Spectral window options: %r' % moldata)
+        casalog.post('Spectral window options: %r' % win)
         
-        if os.path.isfile(imagename+'.tc_final.fits'):
-            casalog.post('Skipping: %s' % (imagename+'.tc_final.fits',))
+        # Run
+        finalimage = imagename+'.tc_final.fits'
+        if os.path.isfile(finalimage) and args.resume:
+            casalog.post('Skipping: %s' % finalimage)
         else:
-            os.system('rm -rf '+ dirmol)
+            casalog.post('Running yclean parallel')
+            os.system('rm -rf '+ dirit)
             execfile(os.path.join(diryclean, 'yclean_parallel.py'))
-        finalcubes += [imagename+'.tc_final.fits']
+
+        # Store split filenames
+        basename = win['basename']
+        if basename not in finalcubes:
+            finalcubes[basename] = [finalimage]
+        else:
+            finalcubes[basename] += [finalimage]
 
     # Join the cubes
-    j = 0
-    spws = config.get('yclean', 'spws').split(',')
-    print spws, nsplits
-    for spw, ns in zip(spws, nsplits):
-        output = os.path.join(args.basedir, 'clean',
-                source+'.spw%s.cube' % spw)
-        nsub = ns + 1
-        if ns==0:
-            os.system('mv finalcubes[j] output')
+    for suff, val in finalcubes.items():
+        # Output name
+        if config.has_option(section, 'out_prefix'):
+            prefix = config.get(section, 'out_prefix')
+            output = os.path.join(args.basedir, 'clean', 
+                    prefix+'.%s.cube.image' % suff)
         else:
-            join_cubes(finalcubes[j:j+nsub], output, 
-                    config.get('yclean','joinchans').split)
-        j += nsub
+            output = os.path.join(args.basedir, 'clean', 
+                    source+'.%s.cube.image' % suff)
+        output = os.path.expanduser(output)
+
+        # Check existance
+        outputfits = output + '.fits'
+        if args.resume and os.path.isfile(outputfits):
+            casalog.post('Skipping: %s' % output)
+            continue
+        elif os.path.exists(outputfits):
+            casalog.post('Overwriting: %s' % output)
+            os.system('rm -rf %s %s' % (output, outputfits))
+
+        # Concatenate
+        if len(val)==1:
+            casalog.post('Copying cube: %r' % val)
+            os.system('rsync -auvr $s $s' % (val[0], output))
+        else:
+            casalog.post('Joining cubes: %r' % val)
+            join_cubes(val, output, split_option(config, section, 'joinchans'),
+                    resume=args.resume)
+
+    return True
         
 if __name__=='__main__':
     main()
+    exit()
