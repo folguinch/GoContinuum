@@ -15,14 +15,28 @@
 ################################################################################
 function deldir () 
 {
-    logger "WARN" "Removing directory: $1"
-    rm -r $1
+    if [[ -d $1 ]]
+    then
+        logger "WARN" "Removing directory: $1"
+        rm -r $1
+    fi
 
     # If exit message is given
     if [[ $2 != "" ]]
     then
         exit $2
     fi
+}
+
+################################################################################
+# Batch delete directory                                                       #
+################################################################################
+function deldirs ()
+{
+    for dir in "$@"
+    do
+        deldir $dir
+    done
 }
 
 ################################################################################
@@ -378,19 +392,24 @@ function run_uvcontsub ()
     local script="$DIR/run_uvcontsub.py"
     local logfile="$LOGS/casa_$(date --utc +%F_%H%M%S)_run_uvcontsub.log"
     local cmd="$CASA --logfile $logfile -c $script"
+    local uvms=$3
+    if [[ $NEB -gt 1 ]]
+    then
+        cmd="$cmd --eb $1"
+    fi
+    shift
 
-    if [[ $REDO -eq 1 ]] || [[ ! -d "$1.contsub" ]]
+    if [[ $REDO -eq 1 ]] || [[ ! -d "${uvms}.contsub" ]]
     then
-        if [[ -d "$1.contsub" ]]
-        then
-            logger "Removing ${1}.contsub"
-            deldir "${1}.contsub"
-        fi
+        # Delete if needed
+        deldir "${uvms}.contsub"
+        deldir "${uvms}.contsub.selfcal"
+
         logger "Running uvcontsub"
-        $cmd $* && logger "uvcontsub succeded" || logger "ERROR" "uvcontsub failed"
-    elif [[ -d "$1.contsub" ]]
+        $cmd $@ && logger "uvcontsub succeded" || logger "ERROR" "uvcontsub failed"
+    elif [[ -d "${uvms}.contsub" ]]
     then
-        logger "Directory ${1}.contsub already exists"
+        logger "Directory ${uvms}.contsub already exists"
     fi
 }
 
@@ -402,17 +421,21 @@ function split_continuum ()
     local script="$DIR/split_ms.py"
     local logfile="$LOGS/casa_$(date --utc +%F_%H%M%S)_split_ms.log"
     local cmd="$CASA --logfile $logfile -c $script"
-    local splitfile1="${2}.cont_avg"
-    local splitfile2="${2}.allchannels_avg"
+    local splitfile1="${3}.cont_avg"
+    local splitfile2="${3}.allchannels_avg"
+    if [[ $NEB -gt 1 ]]
+    then
+        cmd="$cmd --eb $1"
+    fi
+    shift
+
     if [[ $REDO -eq 1 ]] || [[ ! -d $splitfile1 ]]
     then
-        if [[ -d $splitfile1 ]]
-        then
-            logger "Removing continuum split files"
-            rm -r $splitfile1 $splitfile2
-        fi
+        # Clean directory if needed
+        deldirs $splitfile1 $splitfile2 "${splitfile1}.selfcal" "${splitfile2}.selfcal"
+
         logger "Splitting the ms"
-        $cmd $* && logger "Splitting succeded" || logger "ERROR" "Splitting continuum failed"
+        $cmd $@ && logger "Splitting succeded" || logger "ERROR" "Splitting continuum failed"
     else
         logger "Files $splitfile1 and $splitfile2 already exist"
     fi
@@ -443,6 +466,8 @@ function run_pipe ()
     shift
     local concatms="$@"
     logger "DEBUG" "concatms = $concatms"
+
+    # Concatenate EBs
     if [[ $NEB -gt 1 ]]
     then
         concatms="${uvdatams/${SRC0}.[0-9]./${SRC0}.}"
@@ -470,6 +495,7 @@ function run_pipe ()
         logger "SEP" 2
     fi
 
+    # Run pipe
     logger "DEBUG" "final concatms = $concatms"
     if [[ $ptype == "line" ]] && [[ $DOYCLEAN -eq 1 ]]
     then

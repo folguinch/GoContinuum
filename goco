@@ -162,6 +162,7 @@ function main ()
     local contsubms=""
     local splitms1=""
     local splitms2=""
+    local ebflag=""
     while [[ $counter -le $NEB ]]
     do
         if [[ $NEB -gt 1 ]]
@@ -169,7 +170,12 @@ function main ()
             SRC="${SRC0}.${counter}"
         fi
         logger "Working on source: $SRC"
-        get_peak_continuum_channels 
+        if [[ $DOAFOLI -eq 1 ]]
+        then
+            get_peak_continuum_channels 
+        else
+            logger "Skipping AFOLI"
+        fi
         logger "SEP" 2
 
         # uv mses
@@ -183,14 +189,35 @@ function main ()
         
         # uvcontsub
         local chanfiles="${DIRTY}/${SRC}*.chanfile.txt"
-        run_uvcontsub $uvdatams $chanfiles
-        contsubms="${contsubms} ${uvdatams}.contsub"
+        if [[ $DOCONTSUB -eq 1 ]]
+        then
+            run_uvcontsub $counter $CONFIG $uvdatams $chanfiles
+        else
+            logger "Skipping uv contsub"
+        fi
+        if [ -d ${uvdatams}.contsub.selfcal ]
+        then
+            contsubms="${contsubms} ${uvdatams}.contsub.selfcal"
+        else
+            contsubms="${contsubms} ${uvdatams}.contsub"
+        fi
 
         # Splits
         logger "SEP" 2
-        split_continuum "${BASE}${SRC0}.cfg" $uvdatams $chanfiles
-        splitms1="${splitms1} ${uvdatams}.cont_avg"
-        splitms2="${splitms2} ${uvdatams}.allchannels_avg"
+        if [[ $DOSPLIT -eq 1 ]]
+        then
+            split_continuum $counter $CONFIG $uvdatams $chanfiles
+        else
+            logger "Skipping split"
+        fi
+        if [ -d ${uvdatams}.cont_avg.selfcal ]
+        then
+            splitms1="${splitms1} ${uvdatams}.cont_avg.selfcal"
+            splitms2="${splitms2} ${uvdatams}.allchannels_avg.selfcal"
+        else
+            splitms1="${splitms1} ${uvdatams}.cont_avg"
+            splitms2="${splitms2} ${uvdatams}.allchannels_avg"
+        fi
 
         #run_pbclean "${uvdatams}.contsub"
         counter=$((counter + 1))
@@ -346,8 +373,8 @@ CLEAN="${BASE}/clean"
 YCLEAN="${BASE}/yclean"
 #CASA="$(which casa)"
 #MPICASA="$(which mpicasa) -n $NPROC $CASA"
-CASA="/home/myso/opt/casa-release-5.4.0-68.el7/bin/casa"
-MPICASA="/home/myso/opt/casa-release-5.4.0-68.el7/bin/mpicasa -n $NPROC $CASA"
+CASA="/home/myso/opt/casa-release-5.6.0-60.el7/bin/casa"
+MPICASA="/home/myso/opt/casa-release-5.6.0-60.el7/bin/mpicasa -n $NPROC $CASA"
 
 logger "DEBUG" "$(declare -p | grep "declare -- *")"
 source ${DIR}/functions.sh

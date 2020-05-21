@@ -2,6 +2,9 @@ import argparse
 import os
 from ConfigParser import ConfigParser
 
+def check_concatenated(vis):
+    print 'test'
+
 def main():
     # Command line options
     parser = argparse.ArgumentParser()
@@ -26,7 +29,6 @@ def main():
         'chancunks':'-1'})
     config.read(args.configfile[0])
     section = args.section[0]
-    print args.configfile[0]
 
     # Common arguments, add as needed
     float_keys = ['robust', 'pblimit', 'pbmask'] 
