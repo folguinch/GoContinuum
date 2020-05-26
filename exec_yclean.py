@@ -262,6 +262,9 @@ def main():
     config.read(args.configfile[0])
     section = 'yclean'
 
+    # Global options
+    RESUME = args.resume
+
     # Source data
     source = config.get(section, 'field')
     vlsrsource = config.getfloat(section, 'vlsr')
@@ -334,11 +337,18 @@ def main():
         
         # Run
         finalimage = imagename+'.tc_final.fits'
-        if os.path.isfile(finalimage) and args.resume:
+        if os.path.isfile(finalimage) and RESUME:
             casalog.post('Skipping: %s' % finalimage)
         else:
             casalog.post('Running yclean parallel')
-            os.system('rm -rf '+ dirit)
+            if not RESUME:
+                casalog.post('Cleaning directories')
+                if os.path.isdir(dirit):
+                    casalog.post('Deleting: %s' % dirit)
+                    os.system('rm -rf '+ dirit)
+                if os.path.isdir(source+'MASCARA.tc0.m'):
+                    casalog.post('Deleting: %sMASCARA.tc*.m' % source)
+                    os.system('rm -rf '+source+'MASCARA.tc*.m')
             execfile(os.path.join(diryclean, 'yclean_parallel.py'))
 
         # Store split filenames
@@ -362,7 +372,7 @@ def main():
 
         # Check existance
         outputfits = output + '.fits'
-        if args.resume and os.path.isfile(outputfits):
+        if RESUME and os.path.isfile(outputfits):
             casalog.post('Skipping: %s' % output)
             continue
         elif os.path.exists(outputfits):
@@ -376,7 +386,7 @@ def main():
         else:
             casalog.post('Joining cubes: %r' % val)
             join_cubes(val, output, split_option(config, section, 'joinchans'),
-                    resume=args.resume)
+                    resume=RESUME)
 
     return True
         
