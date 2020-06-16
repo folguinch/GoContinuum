@@ -449,7 +449,7 @@ function concat_vis ()
     local script="$DIR/run_concat.py"
     local logfile="$LOGS/casa_$(date --utc +%F_%H%M%S)_run_concat.log"
     local cmd="$CASA --logfile $logfile -c $script"
-    logger "Concatenating: $*"
+    logger "Concatenating (result + input): $*"
     $cmd $* && logger "Concatenation succeded" || logger "ERROR" "Concatenation failed"
 }
 
@@ -470,14 +470,23 @@ function run_pipe ()
     # Concatenate EBs
     if [[ $NEB -gt 1 ]]
     then
+        # Identify selfcal extension
         concatms="${uvdatams/${SRC0}.[0-9]./${SRC0}.}"
-        if [[ $ptype == "line" ]] 
+        local auxext="${2##*.}"
+        if [[ $auxext == "selfcal" ]]
         then
-            concatms="${concatms}.contsub"
-        elif [[ $ptype == "continuum" ]]
+            local auxbase="$(basename $2)"
+            auxbase="${auxbase%.*}"
+            local origext="${auxbase##*.}"
+            local newext="${origext}.${auxext}"
+        else
+            local newext="$auxext"
+        fi
+
+        if [[ $ptype == "line" ]] || [[ $ptype == "continuum" ]]
         then
-            concatms="${concatms}.${2##*.}"
-        else:
+            concatms="${concatms}.${newext}"
+        else
             logger "ERROR" "Pipe type not recognized: $ptype"
         fi
         logger "DEBUG" "setting concatms = $concatms"

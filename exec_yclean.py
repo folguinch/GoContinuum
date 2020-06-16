@@ -8,6 +8,11 @@ import scipy
 import scipy.ndimage
 import numpy as np
 
+# Local utils
+aux = os.path.dirname(sys.argv[2])
+sys.path.insert(0, aux)
+import casa_utils as utils
+
 def split_option(cfg, sect, opt, ignore_sep=[], dtype=None):
     """Split values from configuration option value
 
@@ -38,28 +43,13 @@ def split_option(cfg, sect, opt, ignore_sep=[], dtype=None):
     return vals
 
 def get_nchans(chanrange):
-    """Dtermine the number of channels from a channel range
+    """Determine the number of channels from a channel range
 
     Parameters:
         chanrange (str): Channel range
     """
     i, f = map(int, chanrange.split('~'))
     return abs(f-i) + 1
-
-def fill_molecule(nspw, ind, freq, chanrange):
-    """Deprecated
-    """
-    spw = 'spw%s' % nspw
-    try:
-        start = int(chanrange.split('~')[0])
-        name = 'spw%s_%i' % (nspw, ind+1)
-        nchan = get_nchans(chanrange)
-    except ValueError:
-        start = ''
-        name = spw
-        nchan = -1
-
-    return [name, freq, '', start, nchan, spw, nspw]
 
 def fill_window(chanranges, **kwargs):
     # Check basename
@@ -96,7 +86,7 @@ def fill_names(vals, spws, default='spw'):
     else:
         base = vals[0]
 
-    return ['%s%s' % (base, spw) for spw in spws]
+    return ['%s%s' % (base, spw[0]) for spw in spws]
 
 def match_length(cfg, sect, opt, match, filler='', fillerfn=None):
     """Read values from configuration and match the length to match
@@ -129,9 +119,8 @@ def match_length(cfg, sect, opt, match, filler='', fillerfn=None):
     assert len(vals) == nmatch
 
     return vals
-        
 
-def get_windows(conf, section='yclean'):
+def get_windows(vis, conf, section='yclean'):
     """
     """
 
@@ -140,11 +129,14 @@ def get_windows(conf, section='yclean'):
     freqs = match_length(conf, section, 'restfreqs', spws)
     bnames = match_length(conf, section, 'names', spws, fillerfn=fill_names)
 
+    # Spectral window real values after concat
+    spws_val = utils.get_spws_indices(vis, spws=spws)
+
     # Iterate over spectral windows
     nsplits = []
     windows = []
-    info0 = ['spw', 'freq', 'name']
-    for info in zip(spws, freqs, bnames):
+    info0 = ['spw', 'spw_val', 'freq', 'name']
+    for info in zip(spws, spws_val, freqs, bnames):
         # Get channel ranges
         spw = info[0]
         if 'chanrange%s' % spw in conf.options(section):
@@ -255,7 +247,7 @@ def main():
     config_defaults = {'restfreqs':'', 'chanrange':'~', 'names':''}
     tclean_defaults = {'gridder':'standard', 'specmode':'cube', 'robust':'0.5',
             'outframe':'LSRK', 'interpolation':'linear', 'weighting':'briggs',
-            'deconvolver':'multiscale', 'scales':'0,5,15', 'chanchunks':'2',
+            'deconvolver':'multiscale', 'scales':'0,5,15', 'chanchunks':'1',
             'limitmasklevel':'4.0', 'pblimit':'0.2'}
     config_defaults.update(tclean_defaults)
     config = ConfigParser(config_defaults)
@@ -278,7 +270,7 @@ def main():
     execfile(os.path.join(diryclean, 'secondMaxLocal.py'))
 
     # Spectral setup
-    wins, nsplits = get_windows(config)
+    wins, nsplits = get_windows(args.uvdata[0], config)
 
     # Clean options
     gridder = config.get(section, 'gridder')
@@ -327,7 +319,7 @@ def main():
         width = win['width']
         start = win['start']
         nchan = int(win['nchan'])
-        spwline = win['spw']
+        spwline = win['spw_val']
         imagename = os.path.join(dirit, 'auto'+source+'_'+name+'.12m')
 
         # Log
