@@ -2,6 +2,11 @@ import argparse
 import os
 from ConfigParser import ConfigParser
 
+# Local utils
+aux = os.path.dirname(sys.argv[2])
+sys.path.insert(0, aux)
+import casa_utils as utils
+
 def run_tclean(**kwargs):
     # Run tclean
     casalog.post('Image name: ' + kwargs['imagename'])
@@ -10,13 +15,7 @@ def run_tclean(**kwargs):
 
     # Compute rms
     imagename = kwargs['imagename'] + '.image'
-    st = imstat(imagename=imagename, stokes='I')
-    rms = 1.482602219*st['medabsdevmed'][0]
-    casalog.post('Image rms: %.3e mJy/beam' % (rms*1E3,))
-
-    # Put in header
-    imhead(imagename=imagename, mode='put', hdkey='rms',
-            hdvalue=rms)
+    utils.put_rms(imagename)
 
     # Export FITS
     exportfits(imagename=imagename, 

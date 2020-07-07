@@ -5,16 +5,19 @@ from collections import OrderedDict
 
 #from applycal_cli import applycal
 #from split_cli import split
-from taskinit import casalog
-from tasks import applycal, split
+import numpy as np
 from flagmanager_cli import flagmanager
+from taskinit import casalog, iatool
+from tasks import applycal, split, imhead, imstat, exportfits
 import vishead_cli as vcli
+ia = iatool()
 
 ##################### General Functions #####################
 
 def get_spws_indices(vis, spws=None):
     # Spectral windows names
-    names = get_spws(vis)
+    # Extract name by BB_XX
+    names = [aux.split('#')[2] for aux in get_spws(vis)]
     name_set = set(names)
 
     # Cases
@@ -111,6 +114,98 @@ def run_cal(cfg, section, vis, neb=None):
         # Split ms
         outsplitvis = vis + '.selfcal'
         split(vis=vis, outputvis=outsplitvis, datacolumn='corrected')
+
+##################### Cube/image utils #####################
+def put_rms(imagename, box=''):
+    rms = imhead(imagename=imagename, mode='get', hdkey='rms')
+    if rms is not False:
+        casalog.post('rms already in header')
+        casalog.post('Image rms: %f mJy/beam' % (rms*1E3,))
+        return
+
+    # Get rms
+    casalog.post('Computing rms for: ' + imagename)
+    for dummy in range(5):
+        try:
+            stats = imstat(imagename=imagename, box=box, stokes='I')
+            if box=='':
+                rms = 1.482602219*stats['medabsdevmed'][0]
+            else:
+                rms = 1.*stats['rms'][0]
+            break
+        except TypeError:
+            casalog.post('Imstat failed, trying again ...')
+            continue
+
+    # Put in header
+    imhead(imagename=imagename, mode='put', hdkey='rms',
+            hdvalue=rms)
+    casalog.post('Image rms: %f mJy/beam' % (rms*1E3,))
+
+def crop_spectral_axis(infile, outfile, chans, box=None):
+    ia.open(infile)
+    s = ia.summary()
+    ind = np.where(s['axisnames']=='Frequency')[0][0]
+
+    #if box is not None:
+    #    box = 'box [ [ %ipix , %ipix] , [%ipix, %ipix ] ]' % tuple(box)
+    #    ind = [0,1] + ind
+    #else:
+    #    box = ''
+    aux = ia.crop(outfile=outfile, axes=ind, chans=chans, stretch=True)
+    ia.close()
+
+    return aux
+
+def join_cubes(inputs, output, channels, resume=False, box=None):
+    """Join cubes at specific channels
+    """
+    if len(channels)!=len(inputs):
+        raise ValueError("Length of channels(%i)!=inputs(%i)" %
+                (len(channels),len(inputs)))
+
+    # Concatenated image
+    imagename = os.path.expanduser(output)
+
+    # Join
+    if resume and os.path.isdir(imagename):
+        casalog.post('Skipping concatenated image: %s' % imagename)
+    else:
+        if os.path.isdir(imagename):
+            os.system('rm -rf %s' % imagename)
+        # Crop images
+        for i,(chans,inp) in enumerate(zip(channels, inputs)):
+            infile = os.path.expanduser(inp)
+            img_name = 'temp%i.image' % i
+            if os.path.isdir(img_name):
+                os.system('rm -rf temp*.image')
+            aux = crop_spectral_axis(infile, img_name, chans, box=box)
+            aux.close()
+
+            if i==0:
+                filelist = img_name
+            else:
+                filelist += ' '+img_name 
+
+        # Concatenate
+        ia.imageconcat(outfile=imagename, infiles=filelist)
+        ia.close()
+
+    # Put rms
+    put_rms(imagename)
+
+    # Export fits
+    if resume and os.path.isfile(imagename+'.fits'):
+        casalog.post('Skipping FITS export')
+    else:
+        exportfits(imagename=imagename, fitsimage=imagename+'.fits',
+                overwrite=True)
+
+    # Clean up
+    casalog.post('Cleaning up')
+    os.system('rm -rf temp*.image')
+
+    return True
 
 ##################### Argparse Processing #####################
 

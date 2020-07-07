@@ -121,7 +121,7 @@ def match_length(cfg, sect, opt, match, filler='', fillerfn=None):
     return vals
 
 def get_windows(vis, conf, section='yclean'):
-    """
+    """Define parameters for each spw
     """
 
     # Spectral windows and frequencies
@@ -133,7 +133,6 @@ def get_windows(vis, conf, section='yclean'):
     spws_val = utils.get_spws_indices(vis, spws=spws)
 
     # Iterate over spectral windows
-    nsplits = []
     windows = []
     info0 = ['spw', 'spw_val', 'freq', 'name']
     for info in zip(spws, spws_val, freqs, bnames):
@@ -146,12 +145,11 @@ def get_windows(vis, conf, section='yclean'):
             chanrans = split_option(conf, section, 'chanranges')
         else:
             chanrans = split_option(conf, section, 'chanrange')
-        nsplits += [len(chanrans)-1]
         
         # Fill the window information
         windows += fill_window(chanrans, **dict(zip(info0,info)))
 
-    return windows, nsplits
+    return windows
 
 def crop_spectral_axis(chans, outfile):
     s = ia.summary()
@@ -248,7 +246,8 @@ def main():
     tclean_defaults = {'gridder':'standard', 'specmode':'cube', 'robust':'0.5',
             'outframe':'LSRK', 'interpolation':'linear', 'weighting':'briggs',
             'deconvolver':'multiscale', 'scales':'0,5,15', 'chanchunks':'1',
-            'limitmasklevel':'4.0', 'pblimit':'0.2'}
+            'limitmasklevel':'4.0', 'pblimit':'0.2', #'pbmask':'0.0',
+            'perchanweightdensity': 'true'}
     config_defaults.update(tclean_defaults)
     config = ConfigParser(config_defaults)
     config.read(args.configfile[0])
@@ -270,7 +269,7 @@ def main():
     execfile(os.path.join(diryclean, 'secondMaxLocal.py'))
 
     # Spectral setup
-    wins, nsplits = get_windows(args.uvdata[0], config)
+    wins = get_windows(args.uvdata[0], config)
 
     # Clean options
     gridder = config.get(section, 'gridder')
@@ -302,6 +301,8 @@ def main():
     chanchunks = config.getint(section, 'chanchunks')
     limitMaskLevel = config.getfloat(section, 'limitmasklevel')
     pblimit = config.getfloat(section, 'pblimit')
+    #pbmask = config.getfloat(section, 'pbmask')
+    perchanweightdensity = config.getboolean(section, 'perchanweightdensity')
 
     # Run YCLEAN
     finalcubes = OrderedDict()

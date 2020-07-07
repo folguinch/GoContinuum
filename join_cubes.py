@@ -1,38 +1,10 @@
 #!casa -c
 import argparse
 
-import numpy as np
-
-def crop_spectral_axis(chans, outfile):
-    s = ia.summary()
-    ind = np.where(s['axisnames']=='Frequency')[0][0]
-
-    aux = ia.crop(outfile=outfile, axes=ind, chans=chans)
-    aux.close()
-
-def join_cubes(inputs, output, channels):
-    assert len(channels)==len(inputs)
-    # Crop images
-    for i,(chans,inp) in enumerate(zip(channels, inputs)):
-        ia.open(os.path.expanduser(inp))
-        img_name = 'temp%i.image' % i
-        aux = crop_spectral_axis(chans, img_name)
-        ia.close()
-
-        if i==0:
-            filelist = img_name
-        else:
-            filelist += ' '+img_name 
-
-    # Concatenate
-    imagename = os.path.expanduser(output)+'.image'
-    ia.imageconcat(outfile=imagename, infiles=filelist)
-    exportfits(imagename=imagename, 
-            fitsimage=imagename.replace('.image','.fits'))
-    ia.close()
-
-    print 'Cleaning up'
-    os.system('rm -rf temp*.image')
+# Local utils
+aux = os.path.dirname(sys.argv[2])
+sys.path.insert(0, aux)
+import casa_utils as utils
 
 def main():
     # Command line options
@@ -45,15 +17,13 @@ def main():
             help='Total number of channels')
     parser.add_argument('--output', type=str, 
             help='Final cube file name')
+    parser.add_argument('--box', type=int, nargs=4, default=None,
+            help='Box for cropping the image')
     parser.add_argument('inputs', nargs='*', type=str, 
             help='Input images')
     args = parser.parse_args()
     
-    if args.channels:
-        assert len(args.channels)==len(args.inputs)
-
-    join_cubes(args.inputs, args.output, args.channels)
-
+    utils.join_cubes(args.inputs, args.output, args.channels, box=args.box)
 
 if __name__=="__main__":
     try:
