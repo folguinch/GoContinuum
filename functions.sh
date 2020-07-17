@@ -279,7 +279,7 @@ function get_peak_continuum_channels ()
             then
                 # Peak positions files
                 local posfile="${dirt/.fits/.max.positions.dat}"
-                posfile=${posfile/.spw[0-3]./.}
+                posfile=${posfile/.spw[0-9]./.}
 
                 # Reset if redo
                 if [[ $REDO -eq 1 ]] && [[ -f $posfile ]]
