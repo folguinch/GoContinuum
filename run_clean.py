@@ -50,6 +50,12 @@ def main():
     config.read(args.configfile[0])
     section = args.section[0]
 
+    # Check cell size and imsize are in the config
+    if 'cell' not in config.options(section):
+        raise KeyError('Missing cell in configuration')
+    if 'imsize' not in config.options(section):
+        raise KeyError('Missing imsize in configuration')
+
     # Common arguments, add as needed
     float_keys = ['robust', 'pblimit', 'pbmask'] 
     int_keys = ['niter', 'chanchunks']
