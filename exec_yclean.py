@@ -324,6 +324,7 @@ def main():
         # Directory
         name = win['name']
         dirit = os.path.join(args.basedir, 'yclean', source+'_'+name)
+        casalog.post("-"*80)
         casalog.post("Procesing %s" % name)
 
         # Other clean values
