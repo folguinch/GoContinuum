@@ -156,7 +156,6 @@ UVDATA=$1
 logger "UV data: $UVDATA"
 
 # Environment setup
-UVDATA="${BASE}/uvdata"
 CLEAN="${BASE}/clean"
 YCLEAN="${BASE}/yclean"
 CASA="$(which casa)"
