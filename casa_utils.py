@@ -16,8 +16,8 @@ ia = iatool()
 
 def get_spws_indices(vis, spws=None):
     # Spectral windows names
-    # Extract name by BB_XX
-    names = [aux.split('#')[2] for aux in get_spws(vis)]
+    # Extract name by BB_XX and subwin SW_YY
+    names = [aux.split('#')[2]+'_'+aux.split('#')[3] for aux in get_spws(vis)]
     name_set = set(names)
 
     # Cases

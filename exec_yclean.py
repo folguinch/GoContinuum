@@ -149,8 +149,8 @@ def get_windows(vis, conf, section='yclean'):
 
         # Replace specific channel width
         kwargs = dict(zip(info0,info))
-        if conf.has_option(section, 'width%i' % spw):
-            key = 'width%i' % spw
+        if conf.has_option(section, 'width%s' % spw):
+            key = 'width%s' % spw
             kwargs['width'] = conf.get(section, key)
         
         # Fill the window information
