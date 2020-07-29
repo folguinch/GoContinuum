@@ -276,6 +276,8 @@ def main():
     # Directories
     dirvis = os.path.dirname(args.uvdata[0])
     diryclean = os.path.expanduser(config.get(section, 'dir'))
+    if not os.path.isdir(diryclean):
+        raise ValueError('YCLEAN directory does not exist: %s' % diryclean)
     execfile(os.path.join(diryclean, "def_domask_lines.py"))
     execfile(os.path.join(diryclean, 'secondMaxLocal.py'))
 

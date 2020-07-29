@@ -61,7 +61,7 @@ function check_environment ()
 function main () 
 {
     # Check that all the directories exist
-    check_environment
+    #check_environment
 
     # Run yclean
     run_yclean $UVDATA 
