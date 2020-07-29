@@ -60,7 +60,7 @@ def fill_window(chanranges, **kwargs):
     # Fill information
     window = []
     for i, chanran in enumerate(chanranges):
-        info = {'width':'', 'basename':kwargs['name']}
+        info = {'width':kwargs.get('width',''), 'basename':kwargs['name']}
         info.update(kwargs)
         
         # Fill info
@@ -128,14 +128,15 @@ def get_windows(vis, conf, section='yclean'):
     spws = split_option(conf, section, 'spws')
     freqs = match_length(conf, section, 'restfreqs', spws)
     bnames = match_length(conf, section, 'names', spws, fillerfn=fill_names)
+    widths = match_length(conf, section, 'widths', spws)
 
     # Spectral window real values after concat
     spws_val = utils.get_spws_indices(vis, spws=spws)
 
     # Iterate over spectral windows
     windows = []
-    info0 = ['spw', 'spw_val', 'freq', 'name']
-    for info in zip(spws, spws_val, freqs, bnames):
+    info0 = ['spw', 'spw_val', 'freq', 'name', 'width']
+    for info in zip(spws, spws_val, freqs, bnames, widths):
         # Get channel ranges
         spw = info[0]
         if 'chanrange%s' % spw in conf.options(section):
@@ -145,9 +146,15 @@ def get_windows(vis, conf, section='yclean'):
             chanrans = split_option(conf, section, 'chanranges')
         else:
             chanrans = split_option(conf, section, 'chanrange')
+
+        # Replace specific channel width
+        kwargs = dict(zip(info0,info))
+        if conf.has_option(section, 'width%i' % spw):
+            key = 'width%i' % spw
+            kwargs['width'] = conf.get(section, key)
         
         # Fill the window information
-        windows += fill_window(chanrans, **dict(zip(info0,info)))
+        windows += fill_window(chanrans, **kwargs)
 
     return windows
 
@@ -242,12 +249,12 @@ def main():
     args = parser.parse_args()
 
     # Configuration
-    config_defaults = {'restfreqs':'', 'chanrange':'~', 'names':''}
+    config_defaults = {'restfreqs':'', 'chanrange':'~', 'names':'', 'widths':''}
     tclean_defaults = {'gridder':'standard', 'specmode':'cube', 'robust':'0.5',
             'outframe':'LSRK', 'interpolation':'linear', 'weighting':'briggs',
             'deconvolver':'multiscale', 'scales':'0,5,15', 'chanchunks':'1',
             'limitmasklevel':'4.0', 'pblimit':'0.2', #'pbmask':'0.0',
-            'perchanweightdensity': 'true'}
+            'perchanweightdensity': 'true', 'phasecenter':''}
     config_defaults.update(tclean_defaults)
     config = ConfigParser(config_defaults)
     config.read(args.configfile[0])
@@ -259,7 +266,9 @@ def main():
     # Source data
     source = config.get(section, 'field')
     vlsrsource = config.getfloat(section, 'vlsr')
-    phasecenter = ''
+    phasecenter = config.get(section, 'phasecenter')
+    if phasecenter != '':
+        casalog.post('Phase center = %s' % phasecenter)
     uvtaper = ''
 
     # Directories
