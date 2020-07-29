@@ -169,7 +169,13 @@ function run_yclean ()
     local script="$DIR/exec_yclean.py"
     local logfile="$LOGS/casa_$(date --utc +%F_%H%M%S)_exec_yclean.log"
     local casaflags="--logfile $logfile -c"
-    local cmd="$MPICASA $casaflags $script $1 $CONFIG"
+    if [[ $TESTING -eq 1 ]]
+    then
+        local flags="--test"
+    else
+        local flags=""
+    fi
+    local cmd="$MPICASA $casaflags $script $flags $1 $CONFIG"
     local finalimages=( ${CLEAN}/${SRC0}*.cube.image )
     
     cd $BASE
@@ -199,7 +205,7 @@ function run_yclean ()
     else
         if [[ $REDO -eq 0 ]] 
         then
-            cmd="$MPICASA $casaflags $script --resume $1 $CONFIG"
+            cmd="$MPICASA $casaflags $script $flags --resume $1 $CONFIG"
             #test -e ${finalimages[0]}  && logger "YCLEAN already ran" || $cmd
             logger "Resuming YCLEAN"
             set +e

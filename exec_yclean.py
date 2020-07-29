@@ -242,6 +242,8 @@ def main():
             help='Base directory')
     parser.add_argument('--resume', action='store_true',
             help='Resume if files are in yclean directory')
+    parser.add_argument('--test', action='store_true',
+            help='Just print options used per spw')
     parser.add_argument('uvdata', nargs=1, type=str,
             help='uv data ms')
     parser.add_argument('configfile', nargs=1, type=str,
@@ -336,6 +338,8 @@ def main():
         casalog.post('vis = %s' % vis)
         casalog.post('imagename = %s' % imagename)
         casalog.post('Spectral window options: %r' % win)
+        if args.test:
+            continue
         
         # Run
         finalimage = imagename+'.tc_final.fits'
@@ -361,6 +365,8 @@ def main():
             finalcubes[basename] += [finalimage]
 
     # Join the cubes
+    if args.test:
+        return True
     for suff, val in finalcubes.items():
         # Output name
         if config.has_option(section, 'out_prefix'):
