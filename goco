@@ -24,20 +24,23 @@ function usage ()
 {
     # Print usage and exit with error
     cat <<fin
-Usage: pipeline.sh [-h|--help] [--noredo] [-s|--silent] [--vv] [--dirty] [--skip step [step ...]] [--put_rms] [--pos x y] [--max] field
+Usage: goco [-h|--help] [-s|--silent] [--vv] [--steps] [-b|--base] [--noredo] [-n|--nproc]
+    [--nspw N] [--skip STEP [STEP ...]] [--put_rms] [--pos x y] [--neb NEB] field
 
 Parameters:
   field                 Field name
 
 Options:
   -h, --help            Help
-  --neb                 Number of EBs
-  --noredo              Skip steps some steps already finished
   -s, --silent          Set verbose=0 in pipeline.sh
   --vv                  Set verbose level to debug
-  --dirty               Compute dirty images if dirty directory does not exist
-  --skip                Skip given steps (see --steps)
   --steps               List available steps
+  -b, --base            Base directory (default: ./)
+  --noredo              Skip steps some steps already finished
+  -n, nproc             Number of processes for CLEANing
+  --nspw N              Number of spectral windows (not tested)
+  --skip STEP ...       Skip given steps (see --steps)
+  --neb                 Number of EBs
   --put_rms             Put rms in image headers
   --pos                 Position where to extract spectrum
   --max                 Use max to determine position of peak
@@ -295,16 +298,21 @@ while getopts $OPTSPEC option; do
     case $opt in
         h | help ) # display Help
             Help;;
-        noredo ) # Change REDO
-            REDO=0;;
         s | silent ) # Decrease verbose level
             VERBOSE=0;;
+        vv ) # Increase verbose level
+            VERBOSE=2
+            logger "Previous messages written to file";;
+        steps ) # Print steps and exit
+            list_steps;;
         b | base ) # Base directory
             BASE="$OPTARG"
             if [[ $opt == "base" ]]
             then
                 OPTIND=$((OPTIND+1))
             fi;;
+        noredo ) # Change REDO
+            REDO=0;;
         n | nproc ) # Number of processes for parallel
             NPROC="$OPTARG"
             if [[ $opt == "nproc" ]]
@@ -315,15 +323,8 @@ while getopts $OPTSPEC option; do
             NSPW=$OPTARG
             logger "Number of spws: $NSPW"
             OPTIND=$((OPTIND+1));;
-        vv ) # Increase verbose level
-            VERBOSE=2
-            logger "Previous messages written to file";;
-        dirty ) # Perform dirty 
-            DODIRTY=1;;
         skip ) # Skip given steps
             update_triggers $OPTIND $@;;
-        steps ) # Print steps and exit
-            list_steps;;
         put_rms ) # Put RMS in dirty images          
             PUTRMS=1;;
         pos ) # Give source position
