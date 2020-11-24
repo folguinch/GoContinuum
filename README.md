@@ -8,8 +8,8 @@ produce a continuum subtracted ms and quality assurance continuum images.
 
 ### Dependencies
 
-In addition to the most recent version of CASA, the code need the following 
-python packages:
+The code has been tested with [CASA](https://casa.nrao.edu/) 5.x versions and 
+python 2.7. In addition the code need the following python packages:
 * numpy
 * scipy
 * matplotlib
