@@ -110,3 +110,4 @@ imsize = 1024 1024
 cellsize = 0.04arcsec
 ```
 
+[![DOI](https://zenodo.org/badge/177511811.svg)](https://zenodo.org/badge/latestdoi/177511811)
