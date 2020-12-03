@@ -1,21 +1,29 @@
 #!/bin/python
-import os, argparse
+import os
+import argparse
+from ConfigParser import ConfigParser
 
-import numpy as np
-import matplotlib.pyplot as plt
-from myutils.logger import get_logger
-from scipy.ndimage.morphology import binary_dilation
-from scipy.stats import linregress
 from astropy.stats import sigma_clip
-from myutils.argparse_actions import LoadFITS, LoadTXTArray
+from scipy.interpolate import interp1d
+from scipy.ndimage.morphology import binary_dilation
+from scipy.optimize import bisect
+from scipy.stats import linregress
+import matplotlib.pyplot as plt
+import numpy as np
+
+from argparse_actions import LoadFITS, LoadTXTArray
 from extract_spectra import find_peak
+from logger import get_logger
 
 # Start settings
-logger = get_logger(__name__, filename='continuum_iterative.log')
+if os.path.isdir('logs'):
+    logger = get_logger(__name__, file_name='logs/continuum_iterative.log')
+else:
+    logger = get_logger(__name__, file_name='extract_spectra.log')
 
 def group_chans(inds):
     """ Group contiguous channels.
-    Notes:
+    Credit:
         Taken from:
         https://stackoverflow.com/questions/7352684/how-to-find-the-groups-of-consecutive-elements-from-an-array-in-numpy
     """
@@ -63,12 +71,7 @@ def linreg_stat(x, axis=None):
 
     return intercept
 
-def find_continuum(spec, sigma_lower=3.0, sigma_upper=1.3, niter=None,
-        cenfunc=np.ma.median, edges=10, erode=0, min_width=2, min_space=0, 
-        table=None, log=True):
-    # Spec to masked array
-    spec = np.ma.masked_invalid(spec)
-
+def basic_masking(spec, edges=10, flagchans=None, log=True):
     # Filter edges
     assert edges<spec.size
     if edges>0:
@@ -76,6 +79,25 @@ def find_continuum(spec, sigma_lower=3.0, sigma_upper=1.3, niter=None,
             logger.info('Masking values at extremes channels')
         spec.mask[:edges] = True
         spec.mask[-edges:] = True
+
+    # Flag channels
+    if flagchans is not None:
+        for flags in flagchans.split():
+            if log:
+                logger.info('Masking channel range: %s', flags)
+            ch1, ch2 = map(int, flags.split('~'))
+            spec.mask[ch1:ch2+1] = True
+
+    return spec
+
+def find_continuum(spec, sigma_lower=3.0, sigma_upper=1.3, niter=None,
+        cenfunc=np.ma.median, edges=10, erode=0, min_width=2, min_space=0,
+        flagchans=None, table=None, log=True):
+    # Spec to masked array
+    spec = np.ma.masked_invalid(spec)
+
+    # Apply basic masking
+    spec = basic_masking(spec, edges=edges, flagchans=flagchans, log=log)
 
     # Filter data
     try:
@@ -143,6 +165,17 @@ def preprocess(args):
         fmt = '%s\t' * len(args.tableinfo)
         args.table.write(fmt % tuple(args.tableinfo))
 
+    # Open configuration file
+    if args.config is not None:
+        cfg = ConfigParser({'flagchans':None, 'levels':None,
+            'levelmode':args.levelmode})
+        cfg.read(args.config)
+        if cfg.has_section('afoli'):
+            args.flagchans = cfg.get('afoli', 'flagchans')
+            args.levels = cfg.get('afoli','levels')
+            args.levelmode = cfg.get('afoli','level_mode')
+
+    # Get spectrum
     try:
         # If cube is loaded
         logger.info('Image shape: %r', args.cube.data.shape)
@@ -154,17 +187,6 @@ def preprocess(args):
             logger.info('Using input peak position')
             xmax, ymax = args.peak
         else:
-            ## Sum over spectral axis
-            #if args.rms is not None:
-            #    logger.info('Summing along spectral axis data over %f',
-            #            args.rms[0])
-            #    masked = np.ma.masked_less(args.cube.data[0,:,:,:], args.rms[0])
-            #    imgsum = np.sum(masked, axis=0)
-            #else:
-            #    logger.info('Summing along spectral axis')
-            #    imgsum = np.sum(args.cube.data[0,:,:,:], axis=0)
-            #ymax, xmax = np.unravel_index(np.nanargmax(imgsum), imgsum.shape)
-            #logger.info('Peak pixel at: %i, %i', xmax, ymax)
             xmax, ymax = find_peak(cube=args.cube, rms=args.rms)
 
         # Write table
@@ -246,68 +268,19 @@ def func_sigmaclip(args):
     else:
         raise ValueError
 
-    ## Filter data
-    #filtered = sigma_clip(args.spectrum, sigma=sigma, sigma_lower=sigma_lower, 
-    #        sigma_upper=sigma_upper, iters=args.niter,cenfunc=args.censtat)
-    #nfil = np.sum(filtered.mask)
-    #ntot = filtered.data.size
-    #logger.info('Initial number of masked channels = %i/%i', nfil, ntot)
-
-    ## Erode lines
-    #assert args.erode<filtered.data.size/2
-    #if args.erode>0:
-    #    logger.info('Eroding the lines %i times', args.erode)
-    #    filtered.mask = binary_dilation(filtered.mask, iterations=args.erode)
-    #    nfil = np.sum(filtered.mask)
-    #    logger.info('Number of masked channels after eroding = %i/%i', nfil, ntot)
-
-    ## Filter small bands
-    #if args.min_width:
-    #    logger.info('Filtering out small masked bands')
-    #    logger.info('Minimum masked band width: %i', args.min_width)
-    #    filtered.mask = filter_min_width(filtered.mask, args.min_width)
-    #    nfil = np.sum(filtered.mask)
-    #    logger.info('Number of masked channels after unmasking small bands = %i/%i', 
-    #            nfil, ntot)
-    #    
-    ## Filter consecutive
-    #if args.min_space:
-    #    logger.info('Filtering out small bands')
-    #    ind = np.arange(filtered.mask.size)
-    #    groups = np.split(ind[filtered.mask], 
-    #            np.where(np.diff(ind[filtered.mask]) > min_space+1)[0]+1)
-    #    for g in groups:
-    #        if len(g)>1:
-    #            filtered.mask[g[0]:g[-1]] = True
-    #    nfil = np.sum(filtered.mask)
-    #    logger.info('Number of masked channels after masking consecutive = %i/%i', 
-    #            nfil, ntot)
-
-    ## Filter extremes
-    #assert args.extremes<filtered.data.size
-    #if args.extremes>0:
-    #    logger.info('Masking values at extremes channels')
-    #    filtered.mask[:args.extremes+1] = True
-    #    filtered.mask[-args.extremes:] = True
-
-    ## Continuum
-    #cont = np.mean(filtered)
-    #cstd = np.std(filtered)
-    #nfil = np.sum(filtered.mask)
-    #logger.info('Final number of masked channels = %i/%i', nfil, ntot)
-    #logger.info('Continuum level = %f+/-%f', cont, cstd)
-    #if args.table is not None:
-    #    args.table.write('%10f\t%10f\t%10i\n' % (cont, cstd, nfil))
+    # Find continuum
     filtered, cont, cstd = find_continuum(args.spectrum,
             sigma_lower=sigma_lower, sigma_upper=sigma_upper, niter=args.niter,
             cenfunc=args.censtat, edges=args.extremes, erode=args.erode,
             min_width=args.min_width, min_space=args.min_space,
-            table=args.table, log=True)
+            flagchans=args.flagchans, table=args.table, log=True)
     nfil = np.ma.count_masked(filtered)
     ntot = filtered.data.size
 
     # Get sigma_clip steps
-    scpoints, scmedians, scmeans, scstds = get_sigma_clip_steps(args.spectrum, 
+    scpoints, scmedians, scmeans, scstds = get_sigma_clip_steps(
+            basic_masking(np.ma.masked_invalid(args.spectrum),
+                edges=args.extremes, flagchans=args.flagchans, log=False),
             sigma_lower, sigma_upper, cenfunc=args.censtat)
 
     # Contiguous channels
@@ -346,6 +319,10 @@ def func_sigmaclip(args):
                     xytext=(0.5*(xl+xu),0.5*(yl+yu)/cont), xycoords='data',
                     horizontalalignment='center', color='k')
 
+        # Others
+        ax1.annotate('Continuum intensity = %f' % cont, xy=(0.1,0.9),
+                xytext=(0.1,0.9), xycoords='axes fraction')
+
         # Spectrum
         ax2.plot(filtered.data, 'k-')
         ax2.set_xlim(0, len(filtered.data))
@@ -353,65 +330,22 @@ def func_sigmaclip(args):
         ax2.axhline(cont, color='b', linestyle='-')
         #ax2.axhline(0.15887, color='g', linestyle='-')
         plot_mask(ax2, chans)
-    
-    # Iteration condition
-    #inc = 1. + args.increment/100.
-    #i = 1.
-    #def condition(inc):
-    #    c1 = cont+inc*args.sigma*cstd <= np.max(filtered.data)
-    #    c2 = cont-inc*args.sigma*cstd >= np.min(filtered.data)
-    #    return c1 or c2
-    #closest = 100
-    #close_mask = None
-    #while condition(inc):
-    #    # Filter points
-    #    mask = (filtered.data <= cont+inc*args.sigma*cstd) & \
-    #            (filtered.data > cont-inc*args.sigma*cstd)
-    #    newmean = np.mean(filtered.data[mask])
-    #    newstd = np.std(filtered.data[mask])
-
-    #    # Log
-    #    #print('='*80)
-    #    #logger.info('Iteration: %i', i+1)
-    #    #logger.info('Upper limit = %f', cont+inc*cstd)
-    #    #logger.info('Lower limit = %f', cont-inc*cstd)
-    #    #logger.info('Mean value = %f', newmean)
-    #    #logger.info('Std value = %f', newstd)
-
-    #    # Expand mask
-    #    aux = np.abs(np.sum(~mask)*100./nfil)
-    #    if np.abs(aux - args.limit) < closest:
-    #        closest = np.abs(aux - args.limit)
-    #        close_mask = mask
-
-    #    if args.plotname:
-    #        #ax1.plot(i+1, newmean/cont, 'bo')
-    #        #ax1b.plot(i+1, (ntot-np.sum(~mask))*100./ntot, 'ro')
-    #        ax1.plot((ntot-np.sum(~mask))*100./ntot, newmean/cont, 'bo')
-    #        ax1b.plot((ntot-np.sum(~mask))*100./ntot, newstd, 'ro')
-
-    #    # Update increment
-    #    i += 1
-    #    inc = 1. + args.increment*i/100.
-
-    ## Log
-    #print('-'*80)
-    #logger.info('Closest percent difference = %f', closest)
-    #logger.info('Masked channels difference = %i', nfil-np.sum(~close_mask))
-
-    if args.plotname:
-        #chans = group_chans(ind[~close_mask])
-        #plot_mask(ax2, chans, color='g')
         fig.savefig(args.plotname, bbox_inches='tight')
+    
+    if args.levels:
+        print '-'*80
+        logger.info('[OPTIONAL] Obtaining masked channels at each level')
+        proc_reverse_levels(args, scmeans, scstds, cont,
+                sigma_lower=sigma_lower, sigma_upper=sigma_upper, log=True)
+        print '-'*80
 
     return filtered.mask
 
 def get_sigma_clip_steps(spec, sigma_lower, sigma_upper, cenfunc='median'):
-    newcont = np.inf
-    means = []
-    medians = []
-    stds = []
-    npoints = []
+    means = [np.ma.mean(spec)]
+    medians = [np.ma.median(spec)]
+    stds = [np.ma.std(spec)]
+    npoints = [np.sum(~spec.mask)]
     i = 1
     while True:
         try:
@@ -424,14 +358,110 @@ def get_sigma_clip_steps(spec, sigma_lower, sigma_upper, cenfunc='median'):
         npoint = np.sum(~filtered.mask)
         if len(npoints)==0 or npoints[-1]!=npoint:
             npoints += [npoint]
-            means += [np.mean(filtered)]
-            medians += [np.median(spec[~filtered.mask])]
-            stds += [np.std(filtered)]
+            means += [np.ma.mean(filtered)]
+            medians += [np.ma.median(spec[~filtered.mask])]
+            stds += [np.ma.std(filtered)]
         else:
             break
         i += 1
     return np.array(npoints), np.array(medians), np.array(means), \
             np.array(stds)
+
+def proc_reverse_levels(args, means, stds, cont, sigma_lower=3.0,
+        sigma_upper=1.3, log=True):
+    levels = map(float, args.levels.split())
+
+    for l in levels:
+        if log:
+            print '-'*80
+            logger.info('Processing level: %f', l)
+        # Mask the spectrum
+        spec = np.ma.masked_invalid(args.spectrum)
+        spec = basic_masking(spec, edges=args.extremes, 
+                flagchans=args.flagchans, log=log)
+        
+        # Find ranges
+        y1 = means/cont
+        if np.min(y1)<(1.+l)<np.max(y1):
+            # Interpolation functions
+            x = np.arange(means.size)
+            y1 = y1 - (1.+l)
+            y2 = stds
+            try:
+                kind = int(args.levelmode)
+            except ValueError:
+                kind = args.levelmode
+            fn1 = interp1d(x, y1, kind=kind, bounds_error=False, 
+                    fill_value=(y1[0],y1[-1]))
+            fn2 = interp1d(x, y2, kind=kind, bounds_error=False, 
+                    fill_value=(y2[0],y2[-1]))
+
+            # Find root
+            x0 = bisect(fn1, x[0], x[-1])
+            levcont = (fn1(x0) + (1.+l)) * cont
+            levstd = fn2(x0)
+        else:
+            # Step closer to the level
+            ind = np.nanargmin(np.abs((1.+l) - means/cont))
+            levcont = means[ind]
+            levstd = stds[ind]
+            if log:
+                logger.warn('Value outside range')
+                logger.warn('Using nearest value instead')
+        if log:
+            logger.info('Value at %f:', 1.+l)
+            logger.info('Continuum = %f', levcont)
+            logger.info('Std dev = %f', levstd)
+        spec.mask[spec<levcont-sigma_lower*levstd] = True
+        spec.mask[spec>levcont+sigma_upper*levstd] = True
+
+        # Plot
+        if args.plotname:
+            # Contiguous channels
+            ind = np.arange(len(spec.mask))
+            chans = group_chans(ind[spec.mask])
+
+            # Plot
+            basenm, ext = os.path.splitext(args.plotname)
+            plotname = basenm + '.%.2f' % l + ext
+            spec_plot(spec.data, filename=plotname, cont=levcont, 
+                    chanmask=chans, 
+                    title='Continuum = %f; continuum channels = %i/%i' % \
+                            (levcont, np.sum(~spec.mask), spec.size))
+
+        # Save file
+        if args.chanfile:
+            basenm, ext = os.path.splitext(args.chanfile)
+            chanfile = basenm + '.%.2f' % l + ext
+            postprocess(spec.mask, args, filename=chanfile)
+
+def spec_plot(y, filename=None, cont=None, chanmask=None, title=None):
+    plt.close()
+    width = 17.2
+    height = 3.5
+    fig = plt.figure(figsize=(width,height))
+    ax = fig.add_subplot(111)
+
+    # Plot spectrum
+    ax.set_xlabel('Channel number')
+    ax.set_ylabel('Intensity')
+    ax.plot(y, 'k-')
+    ax.set_xlim(0, len(y))
+
+    # Overplots
+    if cont is not None:
+        ax.axhline(cont, color='b', linestyle='-')
+    if chanmask is not None:
+        plot_mask(ax, chanmask)
+
+    # Others
+    if title:
+        ax.set_title(title)
+
+    # Save
+    if filename:
+        fig.savefig(filename)
+    plt.close()
 
 def get_plot(xlabel='Iteration number', ylabela='Average intensity', 
         ylabelb='Masked channels'):
@@ -463,7 +493,7 @@ def plot_mask(ax, chans, color='r'):
             continue
         ax.axvspan(g[0], g[-1], fc=color, alpha=0.5, ls='-')
 
-def postprocess(mask_flagged, args):
+def postprocess(mask_flagged, args, filename=None):
     # Group channels
     assert len(args.spectrum)==len(mask_flagged)
     ind = np.arange(len(args.spectrum)) 
@@ -472,9 +502,10 @@ def postprocess(mask_flagged, args):
     # Covert to CASA format
     flagged = chans_to_casa(flagged)
 
-    if args.chanfile:
-        logger.info('Writing: %s', os.path.basename(args.chanfile))
-        with open(os.path.expanduser(args.chanfile), 'w') as out:
+    if filename or args.chanfile:
+        chanfile = filename or args.chanfile
+        logger.info('Writing: %s', os.path.basename(chanfile))
+        with open(os.path.expanduser(chanfile), 'w') as out:
             out.write(flagged)
     logger.info('Channels flagged in CASA notation: %s', flagged)
 
@@ -510,8 +541,10 @@ def main():
             help='Table file to save results')
     parser.add_argument('--tableinfo', default=[''], nargs='*', type=str,
             help='Data for the first columns of the table')
+    parser.add_argument('--config', default=None, 
+            help='Specific setup options')
     parser.set_defaults(spectrum=None, loader=preprocess, post=postprocess,
-            ref_pix=None)
+            ref_pix=None, flagchans=None)
     # Groups
     group1 = parser.add_mutually_exclusive_group(required=True)
     group1.add_argument('--cube', action=LoadFITS, 
@@ -537,7 +570,8 @@ def main():
     psigmaclip.add_argument('--censtat', type=str, default='median',
             choices=['median', 'mean', 'linregress'],
             help="Statistic for sigma_clip cenfunc")
-    psigmaclip.set_defaults(func=func_sigmaclip, ref_spec=None)
+    psigmaclip.set_defaults(func=func_sigmaclip, ref_spec=None, levels=None,
+            levelmode='nearest')
     args = parser.parse_args()
     args.loader(args)
     mask = args.func(args)

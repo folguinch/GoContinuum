@@ -1,0 +1,166 @@
+#!/bin/bash
+################################################################################
+#                       YCLEAN command line program                            #
+#                                                                              #
+# Produce ALMA data cubes using YCLEAN (Contreras 2018,                        #
+# https://zenodo.org/record/1216881).                                          #
+#                                                                              #
+# Change History                                                               #
+# 2019/01/16  Fernando Olguin   Initial version.                               #
+#             Patricio Sanhueza                                                #
+#                                                                              #
+################################################################################
+################################################################################
+################################################################################
+
+# Bash options
+set -e
+
+################################################################################
+# Usage                                                                        #
+################################################################################
+function usage ()
+{
+    # Print usage and exit with error
+    cat <<fin
+Usage: yclean [-h|--help] [--noredo] [--vv] config uvdata
+
+Parameters:
+  config                Configuration file
+  uvdata                UV data
+
+Options:
+  -h, --help            Help
+  --noredo              Skip steps some steps already finished
+  --vv                  Set verbose level to debug
+fin
+    exit 1
+}
+
+################################################################################
+# Check directories exist                                                      #
+################################################################################
+function check_environment () 
+{
+    if [[ ! -d $YCLEAN ]]
+    then
+        logger "Creating yclean directory"
+        mkdir $YCLEAN
+    fi
+    if [[ ! -d $CLEAN ]]
+    then
+        logger "Creating clean directory"
+        mkdir $CLEAN
+    fi
+}
+
+################################################################################
+# Main                                                                         #
+################################################################################
+function main () 
+{
+    # Check that all the directories exist
+    #check_environment
+
+    # Run yclean
+    run_yclean $UVDATA 
+}
+
+################################################################################
+################################################################################
+# Main program                                                                 #
+################################################################################
+################################################################################
+
+##source /home/myso/share/binary_project/maat_venv/env/bin/activate
+# Initialize variables
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+BASE="./"
+OPTSPEC=":htn:b:-:"
+REDO=1
+TESTING=0
+VERBOSE=1
+NPROC=5
+
+# Setup logger
+# Initialize logger file
+LOGS="logs"
+if [[ ! -d $LOGS ]]
+then
+    mkdir $LOGS
+fi
+LOGGERFILE="$LOGS/yclean_debug.log"
+
+# Source utils
+source $DIR/utils.sh
+logger "SEP" 1
+
+################################################################################
+# Process the input options. Add options as needed.                            #
+################################################################################
+# Get the options
+while getopts $OPTSPEC option; do
+    if [[ $option == "-" ]]
+    then
+        opt="$OPTARG"
+        if [[ ${!OPTIND} == -* ]] 
+        then
+            OPTARG=":"
+        else
+            OPTARG="${!OPTIND}"
+        fi
+    else
+        opt="$option"
+    fi
+    case $opt in
+        h | help ) # display Help
+            usage;;
+        noredo ) # Change REDO
+            REDO=0;;
+        t | test ) # Run yclean in test mode
+            TESTING=1;;
+        noredo ) # Change REDO
+            REDO=0;;
+        b | base ) # Base directory
+            BASE="$OPTARG"
+            if [[ $opt == "base" ]]
+            then
+                OPTIND=$((OPTIND+1))
+            fi;;
+        n | nproc ) # Number of processes for parallel
+            NPROC="$OPTARG"
+            if [[ $opt == "nproc" ]]
+            then
+                OPTIND=$((OPTIND+1))
+            fi;;
+        vv ) # Increase verbose level
+            VERBOSE=2
+            logger "Previous messages written to file";;
+        \? ) # incorrect option
+            echo "ERROR: Invalid option: -$OPTARG"
+            usage;;
+        : ) # invalid argument
+            echo "ERROR: -$OPTARG requires an argument"
+            usage;;
+        * ) # invalid long anrguments
+            echo "ERROR: Invalid option: --$opt"
+            usage;;
+   esac
+done
+shift $((OPTIND-1))
+CONFIG=$1
+logger "Configuration file: $CONFIG"
+shift
+UVDATA=$1
+logger "UV data: $UVDATA"
+
+# Environment setup
+CLEAN="${BASE}/clean"
+YCLEAN="${BASE}/yclean"
+CASA="$(which casa)"
+MPICASA="$(which mpicasa) -n $NPROC $CASA"
+
+logger "DEBUG" "$(declare -p | grep "declare -- *")"
+source ${DIR}/functions.sh
+main
+echo "QMD"

@@ -1,22 +1,36 @@
 #!/bin/python
-import os, argparse, sys
+import argparse
+import os
+import sys
 
-import numpy as np
-import matplotlib.pyplot as plt
-from myutils.logger import get_logger
-from scipy.ndimage.filters import maximum_filter
-from scipy.ndimage.morphology import binary_dilation
-from scipy.stats import linregress
 from astropy.io import fits
 from astropy.stats import sigma_clip
 from astropy.wcs import WCS
-from myutils.argparse_actions import LoadFITS
+from scipy.ndimage.filters import maximum_filter
+from scipy.ndimage.morphology import binary_dilation
+from scipy.stats import linregress
+import astropy.units as u
+import matplotlib.pyplot as plt
+import numpy as np
+
+from argparse_actions import LoadFITS
+from logger import get_logger
+
+# Optional
+try:
+    from astroSource.source import LoadSourcefromConfig
+    from myutils.spectralcube_utils import freq_axis
+    from myutils.array_utils import save_struct_array
+except ImportError:
+    LoadSourcefromConfig = None
 
 # Start settings
-logger = get_logger(__name__, filename='extract_spectra.log')
+if os.path.isdir('logs'):
+    logger = get_logger(__name__, file_name='logs/extract_spectra.log')
+else:
+    logger = get_logger(__name__, file_name='extract_spectra.log')
 
 def new_fits(data, hdr=None, filename=None):
-
     hdu = fits.PrimaryHDU(data, header=hdr)
     hdul = fits.HDUList([hdu])
     if filename:
@@ -197,6 +211,39 @@ def extract_from_positions(args):
             out.write('\n'.join(['%f %f' % fnu for fnu in \
                     enumerate(spec)]))
 
+def extract_source_spec(args):
+    # Iterate over data
+    for key in args.src.data.keys():
+        # Spectrum
+        if key not in args.keys and args.keys[0]!='all':
+            continue
+        data = args.src[key]
+        if args.beam_avg:
+            spec = data.get_avg_spectrum(args.src.position)*data.data.unit
+        else:
+            spec = data.get_spectrum(coord=args.src.position)
+
+        # Spectral axis
+        chans = np.squeeze(np.indices(spec.shape))
+        freq = freq_axis(data.data)
+        comb = np.array(zip(chans,freq.value,spec.value),
+                dtype=[('chan',chans.dtype),
+                    ('freq',freq.value.dtype),
+                    ('flux',spec.value.dtype)])
+        units = {'chan':u.Unit(''), 'freq':freq.unit, 'flux':spec.unit}
+
+        # File name
+        dir_name = os.path.dirname(data.address)
+        if args.beam_avg:
+            file_name = '%s.%s.spec.beam_avg.dat' % (args.src.name, key)
+        else:
+            file_name = '%s.%s.spec.dat' % (args.src.name, key)
+        file_name = os.path.join(dir_name, file_name)
+        logger.info('Saving spectrum to: %s', file_name)
+
+        # Save spectrum
+        save_struct_array(file_name, comb, units, fmt='%10i\t%10.4f\t%10.4e')
+
 def main():
     # Command line options
     parser = argparse.ArgumentParser()
@@ -211,6 +258,8 @@ def main():
             help='file name for the collapsed image')
     parser.add_argument('--image', action=LoadFITS, default=None,
             help='File name of image to look for peaks')
+    parser.add_argument('--beam_avg', action='store_true', 
+            help='Compute a beam average spectrum')
     group1 = parser.add_mutually_exclusive_group(required=False)
     group1.add_argument('--beam_size', nargs=1, type=float,
             help='Beam size (sigma) in arcsec')
@@ -218,7 +267,7 @@ def main():
             help='Beam FWHM in arcsec')
     group1.add_argument('--radius', nargs=1, type=float,
             help='Mask radius in arcsec')
-    parser.set_defaults(prep=prep, main=extract_spectra, diff=None, cubes=None)
+    parser.set_defaults(diff=None, cubes=None)
     # Subparsers
     # Max
     pmax = subparsers.add_parser('max', 
@@ -231,7 +280,7 @@ def main():
                     'each cube.')
     pmax.add_argument('cube', nargs='*', default=None,
             help='Data cubes file names')
-    pmax.set_defaults(collapse=_max_collapse)
+    pmax.set_defaults(main=extract_spectra, prep=prep, collapse=_max_collapse)
     # Sum
     psum = subparsers.add_parser('sum', 
             help="Use sum of input image")
@@ -239,7 +288,7 @@ def main():
             help='Spectrum file name base (without extension)')
     psum.add_argument('cube', action=LoadFITS, default=None,
             help='Data cube file name')
-    psum.set_defaults(collapse=_sum_collapse)
+    psum.set_defaults(main=extract_spectra, prep=prep, collapse=_sum_collapse)
     # Positions
     ppos = subparsers.add_parser('position',
             help = 'Extract the spectra from the given positions')
@@ -250,6 +299,16 @@ def main():
     ppos.add_argument('locations',  nargs='*', type=int,
             help='List of positions')
     ppos.set_defaults(prep=empty, main=extract_from_positions)
+    # Source
+    if LoadSourcefromConfig is not None:
+        psrc = subparsers.add_parser('source',
+                help='Extract spectra at source position')
+        psrc.add_argument('--keys', nargs=1, type=str, default=['all'],
+                help='Data keys to load')
+        psrc.add_argument('src', metavar='SOURCE',
+                action=LoadSourcefromConfig,
+                help='Source configuration file')
+        psrc.set_defaults(prep=empty, main=extract_source_spec)
     args = parser.parse_args()
     args.prep(args)
     args.main(args)

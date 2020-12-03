@@ -1,12 +1,12 @@
 import os, argparse
 
+from astropy.stats import sigma_clip
 import numpy as np
 import matplotlib.pyplot as plt
-from astropy.stats import sigma_clip
-from myutils.argparse_actions import LoadFITS
-from myutils.logger import get_logger
 
+from argparse_actions import LoadFITS
 from continuum_iterative import group_chans, chans_to_casa, find_continuum, plot_mask
+from logger import get_logger
 
 logger = get_logger(__name__, filename='continuum_iterative.log')
 
