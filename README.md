@@ -1,19 +1,25 @@
 # GoContinuum
 
+[![DOI](https://zenodo.org/badge/177511811.svg)](https://zenodo.org/badge/latestdoi/177511811)
+
 This program uses an asymmetric sigma clip algorithm to find line-free channels
 in the spectrum of the maximum of a data cube. It then uses these channels to
-produce a continuum subtracted ms and quality assurance continuum images. 
+produce a continuum subtracted ms and quality assurance continuum images.
 
 ## Requirements
 
 ### Dependencies
 
-In addition to the most recent version of CASA, the code need the following 
-python packages:
+The code has been tested with [CASA](https://casa.nrao.edu/) 5.x versions and 
+python 2.7. In addition the code need the following python packages:
 * numpy
 * scipy
 * matplotlib
 * astropy
+
+Optional:
+* [YCLEAN](https://zenodo.org/record/1216881) (Contreras 2018; use the command line
+  flag `--skip YCLEAN` if not available)
 
 ### Data structure
 
