@@ -1,10 +1,9 @@
 #!/bin/bash
 ################################################################################
-#                       ALMA Data reduction pipeline                           #
+#                       YCLEAN command line program                            #
 #                                                                              #
-# Produce ALMA continuum and data cubes. This program performs continuum       #
-# channel identification and performs continuum subtraction to produce the     #
-# data products.                                                               #
+# Produce ALMA data cubes using YCLEAN (Contreras 2018,                        #
+# https://zenodo.org/record/1216881).                                          #
 #                                                                              #
 # Change History                                                               #
 # 2019/01/16  Fernando Olguin   Initial version.                               #
