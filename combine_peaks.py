@@ -1,7 +1,9 @@
-import os, argparse
+import os
+import argparse
 
 import numpy as np
-from myutils.argparse_actions import LoadTXTArray
+
+from argparse_actions import LoadTXTArray
 
 def main():
     parser = argparse.ArgumentParser()

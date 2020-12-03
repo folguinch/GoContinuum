@@ -1,17 +1,19 @@
 #!/bin/python
-import os, argparse
+import os
+import argparse
 from ConfigParser import ConfigParser
 
-import numpy as np
-import matplotlib.pyplot as plt
-from myutils.logger import get_logger
-from scipy.ndimage.morphology import binary_dilation
-from scipy.stats import linregress
-from scipy.interpolate import interp1d
-from scipy.optimize import bisect
 from astropy.stats import sigma_clip
-from myutils.argparse_actions import LoadFITS, LoadTXTArray
+from scipy.interpolate import interp1d
+from scipy.ndimage.morphology import binary_dilation
+from scipy.optimize import bisect
+from scipy.stats import linregress
+import matplotlib.pyplot as plt
+import numpy as np
+
+from argparse_actions import LoadFITS, LoadTXTArray
 from extract_spectra import find_peak
+from logger import get_logger
 
 # Start settings
 if os.path.isdir('logs'):
@@ -21,7 +23,7 @@ else:
 
 def group_chans(inds):
     """ Group contiguous channels.
-    Notes:
+    Credit:
         Taken from:
         https://stackoverflow.com/questions/7352684/how-to-find-the-groups-of-consecutive-elements-from-an-array-in-numpy
     """

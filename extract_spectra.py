@@ -5,15 +5,16 @@ import sys
 
 from astropy.io import fits
 from astropy.stats import sigma_clip
-import astropy.units as u
 from astropy.wcs import WCS
-import matplotlib.pyplot as plt
-from myutils.argparse_actions import LoadFITS
-from myutils.logger import get_logger
-import numpy as np
 from scipy.ndimage.filters import maximum_filter
 from scipy.ndimage.morphology import binary_dilation
 from scipy.stats import linregress
+import astropy.units as u
+import matplotlib.pyplot as plt
+import numpy as np
+
+from argparse_actions import LoadFITS
+from logger import get_logger
 
 # Optional
 try:
@@ -30,7 +31,6 @@ else:
     logger = get_logger(__name__, file_name='extract_spectra.log')
 
 def new_fits(data, hdr=None, filename=None):
-
     hdu = fits.PrimaryHDU(data, header=hdr)
     hdul = fits.HDUList([hdu])
     if filename:
