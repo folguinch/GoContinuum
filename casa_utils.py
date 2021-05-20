@@ -1,6 +1,6 @@
 import argparse
 import os
-from ConfigParser import ConfigParser
+from configparser import ConfigParser
 from collections import OrderedDict
 
 #from applycal_cli import applycal

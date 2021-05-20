@@ -158,8 +158,8 @@ logger "UV data: $UVDATA"
 # Environment setup
 CLEAN="${BASE}/clean"
 YCLEAN="${BASE}/yclean"
-CASA="$(which casa)"
-MPICASA="$(which mpicasa) -n $NPROC $CASA"
+CASA="python"
+MPICASA="mpirun -q -n $NPROC $CASA"
 
 logger "DEBUG" "$(declare -p | grep "declare -- *")"
 source ${DIR}/functions.sh

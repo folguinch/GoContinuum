@@ -1,37 +1,42 @@
-import os, argparse, sys
-from ConfigParser import ConfigParser
-from ConfigParser import NoOptionError
+"""Execute yclean."""
 from collections import Counter, OrderedDict
+from pathlib import Path
+from typing import Any, List, Optional, Sequence
+import argparse
+import configparser as cparser
+import sys
 import time
 
+from casatasks import casalog
+import numpy as np
 import scipy
 import scipy.ndimage
-import numpy as np
 
 # Local utils
-aux = os.path.dirname(sys.argv[2])
-sys.path.insert(0, aux)
 import casa_utils as utils
 
-def split_option(cfg, sect, opt, ignore_sep=[], dtype=None):
-    """Split values from configuration option value
+def split_option(cfg: cparser.ConfigParser, option: str,
+                 ignore_sep: Sequence[str] = (),
+                 dtype: Optional[Any] = None) -> List:
+    """Split values from configuration option value.
 
-    The program will use the "," separator first to split the data, if
+    The program will use the `,` separator first to split the data, if
     unseccessful it will use space.
 
-    Parameters:
-        cfg (str): Configuration parser
-        sect (str): Section
-        opt (str): Option
-    Optional:
-        ignore_sep (list): Ignore separator (use if "," is allowed in value)
-        dtype (function): Map values to dtype
+    Args:
+      cfg: configuration parser.
+      opt: option.
+      ignore_sep: optional; ignore separator (use if "," is allowed in value).
+      dtype: optional; map values to dtype.
+
+    Returns:
+      A list with the values under `section`, `option`.
     """
     # Original value
-    val = cfg.get(sect, opt)
+    val = cfg[option]
 
     # Use coma first
-    if ',' in val:
+    if ',' in val and ',' not in ignore_sep:
         vals = val.split(',')
     else:
         vals = val.split()
@@ -39,28 +44,40 @@ def split_option(cfg, sect, opt, ignore_sep=[], dtype=None):
     # Map dtype
     if dtype is not None:
         vals = map(dtype, vals)
-    
+ 
     return vals
 
-def get_nchans(chanrange):
-    """Determine the number of channels from a channel range
+def get_nchans(chanrange: str) -> int:
+    """Determine the number of channels from a channel range.
 
-    Parameters:
-        chanrange (str): Channel range
+    Args:
+      chanrange: channel range.
+
+    Returns:
+      The number of channels in the range.
     """
     i, f = map(int, chanrange.split('~'))
-    return abs(f-i) + 1
+    return abs(f - i) + 1
 
-def fill_window(chanranges, **kwargs):
+def fill_window(chanranges: Sequence[str], **kwargs) -> List:
+    """Fill window information for CLEANing.
+
+    Args:
+      chanranges: list with the channel ranges to split the spw.
+      kwargs: additional window information.
+    
+    Returns:
+      A list with the window information.
+    """
     # Check basename
-    basename = kwargs.setdefault('name', 'spw%s' % (kwargs['spw'],))
-    if basename=='':
-        kwargs['name'] = 'spw%s' % kwargs['spw']
+    basename = kwargs.setdefault('name', f"spw{kwargs['spw']}")
+    if basename == '':
+        kwargs['name'] = f"spw{kwargs['spw']}"
 
     # Fill information
     window = []
     for i, chanran in enumerate(chanranges):
-        info = {'width':kwargs.get('width',''), 'basename':kwargs['name']}
+        info = {'width': kwargs.get('width', ''), 'basename': kwargs['name']}
         info.update(kwargs)
         
         # Fill info
@@ -68,25 +85,31 @@ def fill_window(chanranges, **kwargs):
             info['start'] = int(chanran.split('~')[0])
             info['nchan'] = get_nchans(chanran)
             # Update name
-            if len(chanranges)>1:
-                info['name'] = info['name'] + '_%i' % (i+1,)
+            if len(chanranges) > 1:
+                info['name'] = info['name'] + f'_{i+1}'
         except ValueError:
             info['start'] = ''
             info['nchan'] = -1
 
-        window += [info]
+        window.append(info)
 
     return window
 
-def fill_names(vals, spws, default='spw'):
-    """Create name base
+def fill_names(basenames: Sequence[str], spws: Sequence, 
+               default: str = 'spw') -> List:
+    """Create base names for spws.
+
+    Args:
+      basenames: base name.
+      spws: spw list.
+      default: optional; default name.
     """
-    if len(vals)==0:
+    if len(basenames)==0:
         base = default
     else:
         base = vals[0]
 
-    return ['%s%s' % (base, spw[0]) for spw in spws]
+    return [f'{base}{spw[0]}' for spw in spws]
 
 def match_length(cfg, sect, opt, match, filler='', fillerfn=None):
     """Read values from configuration and match the length to match
@@ -236,42 +259,65 @@ def join_cubes(inputs, output, channels, resume=False):
 def main():
     # Command line options
     parser = argparse.ArgumentParser()
-    parser.add_argument('-c', nargs=1, 
-            help='Casa parameter.')
     parser.add_argument('--basedir', default='', type=str,
-            help='Base directory')
+                        help='Base directory')
+    parser.add_argument('--logfile', default=None, nargs=1, type=str,
+                        help='Log file name')
     parser.add_argument('--resume', action='store_true',
-            help='Resume if files are in yclean directory')
+                        help='Resume if files are in yclean directory')
     parser.add_argument('--test', action='store_true',
-            help='Just print options used per spw')
+                        help='Just print options used per spw')
     parser.add_argument('uvdata', nargs=1, type=str,
-            help='uv data ms')
+                        help='uv data ms')
     parser.add_argument('configfile', nargs=1, type=str,
-            help='Configuration file name')
+                        help='Configuration file name')
     args = parser.parse_args()
 
-    # Configuration
-    config_defaults = {'restfreqs':'', 'chanrange':'~', 'names':'', 'widths':''}
-    tclean_defaults = {'gridder':'standard', 'specmode':'cube', 'robust':'0.5',
-            'outframe':'LSRK', 'interpolation':'linear', 'weighting':'briggs',
-            'deconvolver':'multiscale', 'scales':'0,5,15', 'chanchunks':'1',
-            'limitmasklevel':'4.0', 'pblimit':'0.2', #'pbmask':'0.0',
-            'perchanweightdensity': 'true', 'phasecenter':''}
-    config_defaults.update(tclean_defaults)
-    config = ConfigParser(config_defaults)
-    config.read(args.configfile[0])
-    section = 'yclean'
+    # Logging
+    if args.logfile is not None:
+        casalog.setlogfile(args.logfile[0])
 
-    # Global options
-    RESUME = args.resume
+    # Configuration
+    parserfile = os.Path(args.configfile[0])
+    config_defaults = {
+        'restfreqs': '',
+        'chanrange': '~',
+        'names': '',
+        'widths': '',
+    }
+    tclean_defaults = {
+        'gridder': 'standard',
+        'specmode': 'cube',
+        'robust': '0.5',
+        'outframe': 'LSRK',
+        'interpolation': 'linear',
+        'weighting': 'briggs',
+        'deconvolver': 'multiscale',
+        'scales': '0,5,15',
+        'chanchunks': '-1',
+        'pblimit': '0.2',
+        'perchanweightdensity': 'true',
+        'phasecenter': '',
+        'uvtaper': '',
+    }
+    config_defaults.update(tclean_defaults)
+    configuration = cparser.ConfigParser(config_defaults)
+    if parserfile.exists():
+        configuration.read(args.configfile[0])
+    else:
+        raise IOError(f'Config file does not exists: {parserfile}')
+    section = 'yclean'
+    cfg = configuration[section]
+
+    # Resume?
+    resume = args.resume
+    if resume:
+        casalog.post('Resume turned on')
 
     # Source data
-    source = config.get(section, 'field')
-    vlsrsource = config.getfloat(section, 'vlsr')
-    phasecenter = config.get(section, 'phasecenter')
-    if phasecenter != '':
-        casalog.post('Phase center = %s' % phasecenter)
-    uvtaper = ''
+    source = cfg['field']
+    if cfg['phasecenter'] != '':
+        casalog.post(f"Phase center = {cfg['phasecenter']}")
 
     # Directories
     dirvis = os.path.dirname(args.uvdata[0])
@@ -402,5 +448,5 @@ def main():
     return True
         
 if __name__=='__main__':
-    main()
+    main(sys.argv[1:])
     exit()
