@@ -1,25 +1,24 @@
+"""Utilities for CASA programs and scripts."""
 from pathlib import Path
-from typing import List, Optional, TypeVar
-import argparse
+from typing import Callable, List, Optional
 from configparser import ConfigParser
 from collections import OrderedDict
+import inspect
 
 #from applycal_cli import applycal
 #from split_cli import split
+#from casatasks import applycal, split, imhead, imstat, exportfits, vishead,
+import casatasks as tasks
+import casatools
 import numpy as np
-from flagmanager_cli import flagmanager
-from taskinit import casalog, iatool
-from tasks import applycal, split, imhead, imstat, exportfits
-import vishead_cli as vcli
-ia = iatool()
-
-Logger = TypeVar('Logger')
 
 def get_spws(vis: Path) -> List:
     """Retrieve the spws in a visibility ms."""
-    return vcli.vishead(vis=vis, mode='get', hdkey='spw_name')[0]
+    return tasks.vishead(vis=vis, mode='get', hdkey='spw_name')[0]
 
-def get_spws_indices(vis: Path, spws: Optional[str] = None) -> List:
+def get_spws_indices(vis: Path,
+                     spws: Optional[str] = None,
+                     log: Callable = print) -> List:
     """Get the indices for the spws.
 
     If the spectral windows are duplicated in the vis, the same spectral
@@ -27,7 +26,8 @@ def get_spws_indices(vis: Path, spws: Optional[str] = None) -> List:
 
     Args:
       vis: visibility ms.
-      spws: spw numbers to map to.
+      spws: optional; spw numbers to map to.
+      log: optional; logging function.
 
     Returns:
       A list with the spws in the vis ms.
@@ -39,7 +39,7 @@ def get_spws_indices(vis: Path, spws: Optional[str] = None) -> List:
 
     # Cases
     if len(name_set) != len(names):
-        casalog.post('Data contains duplicated spectral windows')
+        log('Data contains duplicated spectral windows')
         spwinfo = OrderedDict()
         for i, key in enumerate(names):
             if key not in spwinfo:
@@ -59,11 +59,11 @@ def get_spws_indices(vis: Path, spws: Optional[str] = None) -> List:
 
 def get_tclean_params(
     config: ConfigParser,
-    ignore_keys: List[str] = ['vis', 'imagename', 'spw'],
-    float_keys: List[str]  = ['robust', 'pblimit', 'pbmask'],
-    int_keys: List[str] = ['niter', 'chanchunks'],
-    bool_keys: List[str] = ['interactive', 'parallel', 'pbcor', 
-                            'perchanweightdensity'],
+    ignore_keys: List[str] = ('vis', 'imagename', 'spw'),
+    float_keys: List[str]  = ('robust', 'pblimit', 'pbmask'),
+    int_keys: List[str] = ('niter', 'chanchunks'),
+    bool_keys: List[str] = ('interactive', 'parallel', 'pbcor',
+                            'perchanweightdensity'),
 ) -> dict:
     """Filter input parameters and convert values to the correct type.
 
@@ -75,7 +75,8 @@ def get_tclean_params(
       bool_keys: optional; tclean parameters to convert to bool.
     """
     tclean_pars = {}
-    for key in tclean.parameters.keys():
+    keys = inspect.signature(tasks.tclean).parameters.keys()
+    for key in keys:
         if key not in config or key in ignore_keys:
             continue
         #Check for type:
@@ -94,47 +95,56 @@ def get_tclean_params(
 
     return tclean_pars
 
-def put_rms(imagename: Path, 
+def put_rms(imagename: Path,
             box: str = '',
-            log: Optional[Logger] = None) -> None:
+            log: Callable = print) -> None:
     """Put the rms value in the header."""
-    rms = imhead(imagename=imagename, mode='get', hdkey='rms')
+    rms = tasks.imhead(imagename=imagename, mode='get', hdkey='rms')
     if rms:
-        if log is not None:
-            log.post('rms already in header')
-            log.post(f'Image rms: {rms*1000} mJy/beam')
+        log('rms already in header')
+        log(f'Image rms: {rms*1000} mJy/beam')
         return
 
     # Get rms
-    if log is not None:
-        log.post(f'Computing rms for: {imagename}')
+    log(f'Computing rms for: {imagename}')
     for dummy in range(5):
         try:
-            stats = imstat(imagename=imagename, box=box, stokes='I')
-            if box=='':
+            stats = tasks.imstat(imagename=imagename, box=box, stokes='I')
+            if box == '':
                 rms = 1.482602219 * stats['medabsdevmed'][0]
             else:
                 rms = 1. * stats['rms'][0]
             break
         except TypeError:
-            if log is not None:
-                log.post('Imstat failed, trying again ...')
-            else:
-                print('Imstat failed, trying again ...')
+            log(f'Imstat failed (try {dummy+1}), trying again ...')
             continue
 
     # Put in header
-    imhead(imagename=imagename, mode='put', hdkey='rms', hdvalue=rms)
-    if lis is not None:
-        log.post(f'Image rms: {rms*1000} mJy/beam')
-    else:
-        print(f'Image rms: {rms*1000} mJy/beam')
+    tasks.imhead(imagename=imagename, mode='put', hdkey='rms', hdvalue=rms)
+    log(f'Image rms: {rms*1000} mJy/beam')
+
+def crop_spectral_axis(imagename: Path, chans: str, outfile: Path) -> None:
+    """Crop spectral axis of input image.
+
+    Args:
+      imagename: image name.
+      chans: channel range to keep.
+      outfile: output file name.
+    """
+    header_sum = tasks.imhead(imagename=imagename)
+    ind = np.where(header_sum['axisnames'] == 'Frequency')[0][0]
+
+    img = casatools.image()
+    img.open(imagename)
+    aux = img.crop(outfile=outfile, axes=ind, chans=chans)
+    aux.close()
+    img.close()
 
 #def get_value(cfg, sect, opt, default=None, n=None, sep=','):
 #    # Initial value
 #    value = cfg.get(sect, opt)
 #
-#    # Split value 
+#    # Split value
 #    value = value.split(sep)
 #
 #    # Cases:
@@ -246,7 +256,7 @@ def put_rms(imagename: Path,
 #            if i==0:
 #                filelist = img_name
 #            else:
-#                filelist += ' '+img_name 
+#                filelist += ' '+img_name
 #
 #        # Concatenate
 #        ia.imageconcat(outfile=imagename, infiles=filelist)
@@ -325,5 +335,6 @@ def put_rms(imagename: Path,
 #    def __call__(self, parser, namespace, values, option_string=None):
 #        newval = []
 #        for val in values:
-#            newval += [os.path.realpath(os.path.expandvars(os.path.expanduser(val)))]
+#            newval += [os.path.realpath(os.path.expandvars(
+#                                        os.path.expanduser(val)))]
 #        setattr(namespace, self.dest, newval)
