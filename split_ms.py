@@ -13,15 +13,20 @@ def split_ms(args):
     section = args.section[0]
     
     # Define width and validate
+    lenspw = len(config.get(section,'spws').split(','))
     if args.widths_avg is not None:
         width = map(int, args.widths_avg.split(','))
     elif 'width' in config.options(section):
         width = map(int, config.get(section,'width').split())
+        if len(width) != lenspw and args.eb[0] is not None:
+            widths = config.get(section,'width').split(',')
+            widths = widths[args.eb[0]-1].split()
+            width = map(int, widths)
+            casalog.post('Multiple widths detected, using: %r' % (width,))
     else:
         casalog.post('width parameter is not defined', 'SEVERE')
         raise ValueError('width parameter is not defined')
-    lenspw = len(config.get(section,'spws').split(','))
-    if len(width)!=lenspw:
+    if len(width) != lenspw:
         if len(width)==1:
             casalog.post('Using the same width for all spws', 'WARN')
             width = width*lenspws
