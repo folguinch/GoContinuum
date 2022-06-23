@@ -1,3 +1,4 @@
+"""Tools for processing argument parser inputs."""
 from pathlib import Path
 import configparser as cparser
 
@@ -12,7 +13,7 @@ def check_tclean_params(args: NameSpace,
             raise KeyError(f'Missing {opt} in configuration')
 
 def set_config(args: NameSpace):
-    """The the `config` value in `args`.
+    """The `config` value in `args`.
 
     It assumes:
 

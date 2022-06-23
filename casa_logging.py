@@ -1,3 +1,4 @@
+"""Setup the logging system for CASA scripts."""
 import argparse
 
 from casatasks import casalog
