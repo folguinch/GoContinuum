@@ -13,9 +13,17 @@ import scipy
 import scipy.ndimage
 
 # Local utils
-import casa_utils as utils
+import go_continuum.casa_utils as utils
+try:
+    from yclean.yclean_parallel import yclean
+except ImportError:
+    try:
+        from go_continuum.yclean.yclean_parallel import yclean
+    except ImportError as exc:
+        raise ImportError('YCLEAN is not available') from exc
 
-def split_option(cfg: cparser.ConfigParser, option: str,
+def split_option(cfg: cparser.ConfigParser,
+                 option: str,
                  ignore_sep: Sequence[str] = (),
                  dtype: Optional[Any] = None) -> List:
     """Split values from configuration option value.
@@ -24,8 +32,8 @@ def split_option(cfg: cparser.ConfigParser, option: str,
     unseccessful it will use space.
 
     Args:
-      cfg: configuration parser.
-      opt: option.
+      cfg: configuration parser proxy.
+      option: option.
       ignore_sep: optional; ignore separator (use if "," is allowed in value).
       dtype: optional; map values to dtype.
 
@@ -43,7 +51,7 @@ def split_option(cfg: cparser.ConfigParser, option: str,
 
     # Map dtype
     if dtype is not None:
-        vals = map(dtype, vals)
+        vals = list(map(dtype, vals))
  
     return vals
 
@@ -56,7 +64,7 @@ def get_nchans(chanrange: str) -> int:
     Returns:
       The number of channels in the range.
     """
-    i, f = map(int, chanrange.split('~'))
+    i, f = tuple(map(int, chanrange.split('~')))
     return abs(f - i) + 1
 
 def fill_window(chanranges: Sequence[str], **kwargs) -> List:
@@ -100,58 +108,79 @@ def fill_names(basenames: Sequence[str], spws: Sequence,
     """Create base names for spws.
 
     Args:
-      basenames: base name.
+      basenames: base name, only first value is used.
       spws: spw list.
       default: optional; default name.
+
+    Returns:
+      A list with names for each spw.
     """
-    if len(basenames)==0:
+    if len(basenames) == 0:
         base = default
     else:
-        base = vals[0]
+        base = basenames[0]
 
-    return [f'{base}{spw[0]}' for spw in spws]
+    return [f'{base}{spw}' for spw in spws]
 
-def match_length(cfg, sect, opt, match, filler='', fillerfn=None):
-    """Read values from configuration and match the length to match
+def match_length(cfg: cparser.ConfigParser,
+                 option: str,
+                 match: Sequence,
+                 filler: str = '',
+                 fillerfn: Optional[Callable] = None) -> List:
+    """Read values from configuration and match the length to `match`.
+
+    Args:
+      cfg: configuration parser proxy.
+      option: parser option.
+      match: sequence to match the length to.
+      filler: optional; filler value in case option was not set.
+      fillerfn: optional; filling function in case option was not set.
     """
     # Fill function:
     def _fill(val):
         if fillerfn is not None:
             return fillerfn(val, match)
         else:
-            return [filler]*len(match)
+            return [filler] * len(match)
 
     # Original values
-    vals = split_option(cfg, sect, opt)
+    vals = split_option(cfg, option)
     nvals = len(vals)
 
     # Match size
     nmatch = len(match)
-    if nvals!=nmatch and nvals==0:
+    if nvals != nmatch and nvals == 0:
         # Value was not set
         vals = _fill(vals)
-    elif nvals!=nmatch:
+    elif nvals != nmatch:
         # Value was set but with incorrect value
-        casalog.post('Length of %s does not match with pattern' % opt,
-                'WARN')
-        casalog.post('Ignoring %s' % opt, 'WARN')
+        casalog.post(f'Length of {option} does not match with pattern', 'WARN')
+        casalog.post(f'Ignoring {option}', 'WARN')
         vals = _fill(vals)
     else:
         # Match but check for none
-        vals = [val if val.lower()!='none' else filler for val in vals]
-    assert len(vals) == nmatch
+        vals = [val if val.lower() != 'none' else filler for val in vals]
+
+    if len(vals) == nmatch:
+        raise ValueError('Size of values cannot be matched')
 
     return vals
 
-def get_windows(vis, conf, section='yclean'):
-    """Define parameters for each spw
-    """
+def get_windows(vis: Path, cfg: configparser.ConfigParser) -> List:
+    """Define parameters for each spw.
 
+    Args:
+      vis: visibility directory.
+      cfg: configuration parser proxy.
+
+    Returns:
+      A list with the information for cleaning each spw.
+    """
     # Spectral windows and frequencies
-    spws = split_option(conf, section, 'spws')
-    freqs = match_length(conf, section, 'restfreqs', spws)
-    bnames = match_length(conf, section, 'names', spws, fillerfn=fill_names)
-    widths = match_length(conf, section, 'widths', spws)
+    spws = split_option(cfg, 'spws')
+    freqs = match_length(cfg, 'restfreqs', spws)
+    bnames = match_length(cfg, 'names', spws, fillerfn=fill_names)
+    widths = match_length(cfg, 'widths', spws)
 
     # Spectral window real values after concat
     spws_val = utils.get_spws_indices(vis, spws=spws)
@@ -162,19 +191,17 @@ def get_windows(vis, conf, section='yclean'):
     for info in zip(spws, spws_val, freqs, bnames, widths):
         # Get channel ranges
         spw = info[0]
-        if 'chanrange%s' % spw in conf.options(section):
-            key = 'chanrange%s' % (spw,)
-            chanrans = split_option(conf, section, key)
-        elif 'chanranges' in conf.options('yclean'):
-            chanrans = split_option(conf, section, 'chanranges')
+        if f'chanrange{spw}' in cfg:
+            chanrans = split_option(cfg, f'chanrange{spw}')
+        elif 'chanranges' in cfg:
+            chanrans = split_option(cfg, 'chanranges')
         else:
-            chanrans = split_option(conf, section, 'chanrange')
+            chanrans = split_option(cfg, 'chanrange')
 
         # Replace specific channel width
-        kwargs = dict(zip(info0,info))
-        if conf.has_option(section, 'width%s' % spw):
-            key = 'width%s' % spw
-            kwargs['width'] = conf.get(section, key)
+        kwargs = dict(zip(info0, info))
+        if f'width{spw}' in cfg:
+            kwargs['width'] = cfg[f'width{spw}']
         
         # Fill the window information
         windows += fill_window(chanrans, **kwargs)
@@ -256,7 +283,12 @@ def join_cubes(inputs, output, channels, resume=False):
 
     return True
 
-def main():
+def main(args: Sequence) -> None:
+    """Execute `yclean`.
+
+    Args:
+      args: command line arguments.
+    """
     # Command line options
     parser = argparse.ArgumentParser()
     parser.add_argument('--basedir', default='', type=str,
@@ -271,14 +303,14 @@ def main():
                         help='uv data ms')
     parser.add_argument('configfile', nargs=1, type=str,
                         help='Configuration file name')
-    args = parser.parse_args()
+    args = parser.parse_args(args)
 
     # Logging
     if args.logfile is not None:
         casalog.setlogfile(args.logfile[0])
 
     # Configuration
-    parserfile = os.Path(args.configfile[0])
+    parserfile = Path(args.configfile[0])
     config_defaults = {
         'restfreqs': '',
         'chanrange': '~',
@@ -301,7 +333,7 @@ def main():
         'uvtaper': '',
     }
     config_defaults.update(tclean_defaults)
-    configuration = cparser.ConfigParser(config_defaults)
+    configuration = cparser.ConfigParser(defaults=config_defaults)
     if parserfile.exists():
         configuration.read(args.configfile[0])
     else:
@@ -320,15 +352,17 @@ def main():
         casalog.post(f"Phase center = {cfg['phasecenter']}")
 
     # Directories
-    dirvis = os.path.dirname(args.uvdata[0])
-    diryclean = os.path.expanduser(config.get(section, 'dir'))
-    if not os.path.isdir(diryclean):
-        raise ValueError('YCLEAN directory does not exist: %s' % diryclean)
-    execfile(os.path.join(diryclean, "def_domask_lines.py"))
-    execfile(os.path.join(diryclean, 'secondMaxLocal.py'))
+    #dirvis = Path(args.uvdata[0]).expanduser()
+    #diryclean = Path(config.get(section, 'dir')).expanduser()
+    #if not os.path.isdir(diryclean):
+    #    raise ValueError('YCLEAN directory does not exist: %s' % diryclean)
+    #execfile(os.path.join(diryclean, "def_domask_lines.py"))
+    #execfile(os.path.join(diryclean, 'secondMaxLocal.py'))
 
     # Spectral setup
-    wins = get_windows(args.uvdata[0], config)
+    wins = get_windows(args.uvdata[0], cfg)
+    print(wins)
+    raise Exception
 
     # Clean options
     gridder = config.get(section, 'gridder')
@@ -404,7 +438,8 @@ def main():
                 if os.path.isdir(source+'MASCARA.tc0.m'):
                     casalog.post('Deleting: %sMASCARA.tc*.m' % source)
                     os.system('rm -rf '+source+'MASCARA.tc*.m')
-            execfile(os.path.join(diryclean, 'yclean_parallel.py'))
+            #execfile(os.path.join(diryclean, 'yclean_parallel.py'))
+            yclean()
 
         # Store split filenames
         basename = win['basename']

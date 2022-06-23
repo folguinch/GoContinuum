@@ -158,7 +158,7 @@ logger "UV data: $UVDATA"
 # Environment setup
 CLEAN="${BASE}/clean"
 YCLEAN="${BASE}/yclean"
-CASA="python"
+CASA="python3"
 MPICASA="mpirun -q -n $NPROC $CASA"
 
 logger "DEBUG" "$(declare -p | grep "declare -- *")"
