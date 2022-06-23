@@ -1,23 +1,21 @@
+<<<<<<< HEAD
 """Utilities for working with CASA."""
-from typing import Optional, Sequence, List
+from typing import Optional, Sequence, List, TypeVar
+from pathlib import Path
+from configparser import ConfigParser
 from collections import OrderedDict
 
 from casatasks import vishead, casalog
-#import argparse
-#from configparser import ConfigParser
 
-#from applycal_cli import applycal
-#from split_cli import split
-#import numpy as np
-#from flagmanager_cli import flagmanager
-#from taskinit import casalog, iatool
-#from tasks import applycal, split, imhead, imstat, exportfits
-#import vishead_cli as vcli
-#ia = iatool()
+# Types
+Logger = TypeVar('Logger')
 
-##################### General Functions #####################
+def get_spws(vis: Path) -> List:
+    """Retrieve the spws in a visibility ms."""
+    return vishead(vis=vis, mode='get', hdkey='spw_name')[0]
 
-def get_spws_indices(vis: 'Path', spws: Optional[Sequence] = None) -> List:
+def get_spws_indices(vis: 'Path',
+                     spws: Optional[Sequence[str]] = None) -> List:
     """Get the indices of the spws.
 
     This task search for duplicated spws (e.g. after measurement set
@@ -26,6 +24,9 @@ def get_spws_indices(vis: 'Path', spws: Optional[Sequence] = None) -> List:
     Args:
       vis: measurement set.
       spws: optional; selected spectral windows.
+
+    Returns:
+      A list with the spws in the vis ms.
     """
     # Spectral windows names
     # Extract name by BB_XX and subwin SW_YY
@@ -38,9 +39,9 @@ def get_spws_indices(vis: 'Path', spws: Optional[Sequence] = None) -> List:
         spwinfo = OrderedDict()
         for i, key in enumerate(names):
             if key not in spwinfo:
-                spwinfo[key] = '%i' % i
+                spwinfo[key] = f'{i}'
             else:
-                spwinfo[key] += ',%i' % i
+                spwinfo[key] += f',{i}'
     else:
         spwinfo = OrderedDict(zip(names, map(str, range(len(names)))))
 
@@ -51,6 +52,81 @@ def get_spws_indices(vis: 'Path', spws: Optional[Sequence] = None) -> List:
         spw_ind = list(range(len(name_set)))
 
     return [spw for i, spw in enumerate(spwinfo.values()) if i in spw_ind]
+
+def get_tclean_params(
+    config: ConfigParser,
+    ignore_keys: List[str] = ['vis', 'imagename', 'spw'],
+    float_keys: List[str]  = ['robust', 'pblimit', 'pbmask'],
+    int_keys: List[str] = ['niter', 'chanchunks'],
+    bool_keys: List[str] = ['interactive', 'parallel', 'pbcor', 
+                            'perchanweightdensity'],
+) -> dict:
+    """Filter input parameters and convert values to the correct type.
+
+    Args:
+      config: ConfigParser proxy with input parameters to filter.
+      ignore_keys: optional; tclean parameters to ignore.
+      float_keys: optional; tclean parameters to convert to float.
+      int_keys: optional; tclean parameters to convert to int.
+      bool_keys: optional; tclean parameters to convert to bool.
+    """
+    tclean_pars = {}
+    for key in tclean.parameters.keys():
+        if key not in config or key in ignore_keys:
+            continue
+        #Check for type:
+        if key in float_keys:
+            tclean_pars[key] = config.getfloat(key)
+        elif key in int_keys:
+            tclean_pars[key] = config.getint(key)
+        elif key in bool_keys:
+            tclean_pars[key] = config.getboolean(key)
+        elif key == 'imsize':
+            tclean_pars[key] = list(map(int, config.get(key).split()))
+            if len(tclean_pars[key]) == 1:
+                tclean_pars[key] = tclean_pars[key] * 2
+        elif key == 'scales':
+            tclean_pars[key] = list(map(int, config.get(key).split(',')))
+        else:
+            tclean_pars[key] = config.get(key)
+
+    return tclean_pars
+
+#def put_rms(imagename: Path, 
+#            box: str = '',
+#            log: Optional[Logger] = None) -> None:
+#    """Put the rms value in the header."""
+#    rms = imhead(imagename=imagename, mode='get', hdkey='rms')
+#    if rms:
+#        if log is not None:
+#            log.post('rms already in header')
+#            log.post(f'Image rms: {rms*1000} mJy/beam')
+#        return
+#
+#    # Get rms
+#    if log is not None:
+#        log.post(f'Computing rms for: {imagename}')
+#    for dummy in range(5):
+#        try:
+#            stats = imstat(imagename=imagename, box=box, stokes='I')
+#            if box=='':
+#                rms = 1.482602219 * stats['medabsdevmed'][0]
+#            else:
+#                rms = 1. * stats['rms'][0]
+#            break
+#        except TypeError:
+#            if log is not None:
+#                log.post('Imstat failed, trying again ...')
+#            else:
+#                print('Imstat failed, trying again ...')
+#            continue
+#
+#    # Put in header
+#    imhead(imagename=imagename, mode='put', hdkey='rms', hdvalue=rms)
+#    if lis is not None:
+#        log.post(f'Image rms: {rms*1000} mJy/beam')
+#    else:
+#        print(f'Image rms: {rms*1000} mJy/beam')
 
 #def get_value(cfg, sect, opt, default=None, n=None, sep=','):
 #    # Initial value
@@ -85,11 +161,7 @@ def get_spws_indices(vis: 'Path', spws: Optional[Sequence] = None) -> List:
 #            newval += [False]
 #
 #    return newval
-
-def get_spws(vis):
-    """Read the spw names from measurement set."""
-    return vishead(vis=vis, mode='get', hdkey='spw_name')[0]
-
+#
 #def run_cal(cfg, section, vis, neb=None):
 #    # Check for EB specific sections
 #    if neb is not None:

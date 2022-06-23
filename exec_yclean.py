@@ -1,31 +1,35 @@
 """Execute yclean."""
 from collections import Counter, OrderedDict
 from pathlib import Path
-from typing import Any, List, Optional, Sequence
+from typing import Any, Callable, List, Optional, Sequence, TypeVar
 import argparse
 import configparser as cparser
 import sys
 import time
 
-from casatasks import casalog
 import numpy as np
 import scipy
 import scipy.ndimage
 
 # Local utils
+from go_continuum import args_proc
+from go_continuum import casa_logging
 import go_continuum.casa_utils as utils
 try:
     from yclean.yclean_parallel import yclean
 except ImportError:
     try:
-        from go_continuum.yclean.yclean_parallel import yclean
+        from go_continuum.yclean_src.yclean_parallel import yclean
     except ImportError as exc:
         raise ImportError('YCLEAN is not available') from exc
 
-def split_option(cfg: cparser.ConfigParser,
+# Types
+Config = TypeVar('Config')
+
+def split_option(cfg: Config, 
                  option: str,
                  ignore_sep: Sequence[str] = (),
-                 dtype: Optional[Any] = None) -> List:
+                 dtype: Optional[Callable] = None) -> List:
     """Split values from configuration option value.
 
     The program will use the `,` separator first to split the data, if
@@ -41,7 +45,7 @@ def split_option(cfg: cparser.ConfigParser,
       A list with the values under `section`, `option`.
     """
     # Original value
-    val = cfg[option]
+    val = cfg.get(option, fallback='')
 
     # Use coma first
     if ',' in val and ',' not in ignore_sep:
@@ -67,8 +71,20 @@ def get_nchans(chanrange: str) -> int:
     i, f = tuple(map(int, chanrange.split('~')))
     return abs(f - i) + 1
 
-def fill_window(chanranges: Sequence[str], **kwargs) -> List:
-    """Fill window information for CLEANing.
+def fill_window(chanranges: Sequence[str], **kwargs) -> List[Dict[str, Any]]:
+    """Fill information for each channel window/range.
+
+    Each element of the list contains the information for each channel range.
+    The are stored are:
+
+    - `basename`: base name to keep track of results.
+    - `name`: complete name.
+    - `freq`: rest frequency.
+    - `spw`: nominal spw value.
+    - `spw_val`: `spw` value for `tclean`.
+    - `width`: the `width` parameter for `tclean`.
+    - `start`: the `start` parameter for `tclean`.
+    - `nchan`: the `nchan` parameter for `tclean`.
 
     Args:
       chanranges: list with the channel ranges to split the spw.
@@ -85,6 +101,7 @@ def fill_window(chanranges: Sequence[str], **kwargs) -> List:
     # Fill information
     window = []
     for i, chanran in enumerate(chanranges):
+        # Defaults
         info = {'width': kwargs.get('width', ''), 'basename': kwargs['name']}
         info.update(kwargs)
         
@@ -108,7 +125,7 @@ def fill_names(basenames: Sequence[str], spws: Sequence,
     """Create base names for spws.
 
     Args:
-      basenames: base name, only first value is used.
+      basenames: base name list.
       spws: spw list.
       default: optional; default name.
 
@@ -116,18 +133,24 @@ def fill_names(basenames: Sequence[str], spws: Sequence,
       A list with names for each spw.
     """
     if len(basenames) == 0:
-        base = default
+        base = [default] * len(spws)
+    elif len(basenames) == len(spws):
+        base = basenames
     else:
-        base = basenames[0]
+        base = [basenames[0]] * len(spws)
 
-    return [f'{base}{spw}' for spw in spws]
+    return [f'{bs}{spw}' for bs, spw in zip(base, spws)]
 
-def match_length(cfg: cparser.ConfigParser,
+def match_length(cfg: Config,
                  option: str,
                  match: Sequence,
                  filler: str = '',
-                 fillerfn: Optional[Callable] = None) -> List:
-    """Read values from configuration and match the length to `match`.
+                 fillerfn: Optional[Callable] = None,
+                 log: Callable = print) -> List:
+    """Read values from configuration and match the length to `len(match)`.
+
+    The filler function `fillerfn` should receive 2 inputs: a value and
+    `match`; and return a list with length equal to `len(match)`.
 
     Args:
       cfg: configuration parser proxy.
@@ -135,6 +158,7 @@ def match_length(cfg: cparser.ConfigParser,
       match: sequence to match the length to.
       filler: optional; filler value in case option was not set.
       fillerfn: optional; filling function in case option was not set.
+      log: optional; logging function.
     """
     # Fill function:
     def _fill(val):
@@ -154,33 +178,36 @@ def match_length(cfg: cparser.ConfigParser,
         vals = _fill(vals)
     elif nvals != nmatch:
         # Value was set but with incorrect value
-        casalog.post(f'Length of {option} does not match with pattern', 'WARN')
-        casalog.post(f'Ignoring {option}', 'WARN')
+        log(f'Length of {option} does not match with pattern', 'WARN')
+        log(f'Ignoring {option}', 'WARN')
         vals = _fill(vals)
     else:
         # Match but check for none
         vals = [val if val.lower() != 'none' else filler for val in vals]
 
-    if len(vals) == nmatch:
-        raise ValueError('Size of values cannot be matched')
+    # Double check
+    if len(vals) != nmatch:
+        raise ValueError((f'Number of elements in option {option}'
+                          'does not match'))
 
     return vals
 
-def get_windows(vis: Path, cfg: configparser.ConfigParser) -> List:
+def get_windows(vis: Path, cfg: Config, log: Callable = print) -> List:
     """Define parameters for each spw.
 
     Args:
-      vis: visibility directory.
+      vis: visibility file.
       cfg: configuration parser proxy.
+      log: optional; logging function.
 
     Returns:
       A list with the information for cleaning each spw.
     """
     # Spectral windows and frequencies
     spws = split_option(cfg, 'spws')
-    freqs = match_length(cfg, 'restfreqs', spws)
-    bnames = match_length(cfg, 'names', spws, fillerfn=fill_names)
-    widths = match_length(cfg, 'widths', spws)
+    freqs = match_length(cfg, 'restfreqs', spws, log=log)
+    bnames = match_length(cfg, 'names', spws, fillerfn=fill_names, log=log)
+    widths = match_length(cfg, 'widths', spws, log=log)
 
     # Spectral window real values after concat
     spws_val = utils.get_spws_indices(vis, spws=spws)
@@ -204,7 +231,7 @@ def get_windows(vis: Path, cfg: configparser.ConfigParser) -> List:
             kwargs['width'] = cfg[f'width{spw}']
         
         # Fill the window information
-        windows += fill_window(chanrans, **kwargs)
+        windows.append(fill_window(chanrans, **kwargs))
 
     return windows
 
@@ -283,6 +310,7 @@ def join_cubes(inputs, output, channels, resume=False):
 
     return True
 
+<<<<<<< HEAD
 def main(args: Sequence) -> None:
     """Execute `yclean`.
 
@@ -341,112 +369,133 @@ def main(args: Sequence) -> None:
     section = 'yclean'
     cfg = configuration[section]
 
+def _run_yclean(args: argparse.NameSpace) -> None:
+    """Run yclean."""
     # Resume?
     resume = args.resume
     if resume:
-        casalog.post('Resume turned on')
+        args.log.post('Resume turned on')
 
     # Source data
-    source = cfg['field']
-    if cfg['phasecenter'] != '':
-        casalog.post(f"Phase center = {cfg['phasecenter']}")
+    source = args.config['field']
+    vis = Path(args.uvdata[0])
 
-    # Directories
-    #dirvis = Path(args.uvdata[0]).expanduser()
-    #diryclean = Path(config.get(section, 'dir')).expanduser()
-    #if not os.path.isdir(diryclean):
-    #    raise ValueError('YCLEAN directory does not exist: %s' % diryclean)
-    #execfile(os.path.join(diryclean, "def_domask_lines.py"))
-    #execfile(os.path.join(diryclean, 'secondMaxLocal.py'))
-
-    # Spectral setup
-    wins = get_windows(args.uvdata[0], cfg)
+    # Spectral setup per channel window
+    wins = get_windows(vis, args.config, log=args.log.post)
     print(wins)
     raise Exception
 
-    # Clean options
-    gridder = config.get(section, 'gridder')
-    casalog.post('Gridder = %s' % gridder)
-    wprojplanes = None 
-    specmode = config.get(section, 'specmode')
-    casalog.post('Specmode = %s' % specmode)
-    outframe = config.get(section, 'outframe')
-    casalog.post('Outframe = %s' % outframe)
-    interpolation = config.get(section, 'interpolation')
-    interactive = False
-    imsize = map(int, config.get(section, 'imsize').split())
-    casalog.post('Imsize = %r' % imsize)
-    cell = config.get(section, 'cell')
-    casalog.post('Cell size = %s' % cell)
-    weighting = config.get(section, 'weighting')
-    robust = config.getfloat(section, 'robust')
-    casalog.post('Robust = %s' % robust)
-    deconvolver = config.get(section, 'deconvolver')
-    casalog.post('Deconvolver = %s' % deconvolver)
-    if deconvolver == 'multiscale':
-        scales = map(int, split_option(config, section, 'scales'))
-        casalog.post('Scales = %r' % scales)
-    else:
-        scales = []
-    #rms = 5.7e-3
-    #peak_int = 0.136# these variables are not used apparently
-    #SN_ratio =  26 # these variables are not used apparently
-    chanchunks = config.getint(section, 'chanchunks')
-    limitMaskLevel = config.getfloat(section, 'limitmasklevel')
-    pblimit = config.getfloat(section, 'pblimit')
-    #pbmask = config.getfloat(section, 'pbmask')
-    perchanweightdensity = config.getboolean(section, 'perchanweightdensity')
-
     # Run YCLEAN
-    finalcubes = OrderedDict()
     for win in wins:
         it = 0
         # Directory
         name = win['name']
-        dirit = os.path.join(args.basedir, 'yclean', source+'_'+name)
-        casalog.post("-"*80)
-        casalog.post("Procesing %s" % name)
+        directory = Path(args.basedir)
+        directory = directory / 'yclean' /  f'{source}_{name}')
+        args.log.post('-' * 80)
+        args.log.post(f'Procesing {name}')
 
-        # Other clean values
-        #molvis = moldata[5]
+        # Some clean values
         vis = args.uvdata[0]
         restfreq = win['freq']
         width = win['width']
         start = win['start']
         nchan = int(win['nchan'])
-        spwline = win['spw_val']
-        imagename = os.path.join(dirit, 'auto'+source+'_'+name+'.12m')
+        spw = win['spw_val']
+        imagename = directory / f'auto{source}_{name}.12m'
 
         # Log
-        casalog.post('vis = %s' % vis)
-        casalog.post('imagename = %s' % imagename)
-        casalog.post('Spectral window options: %r' % win)
+        args.log.post(f'vis = {vis}')
+        args.log.post(f'imagename = {imagename}')
+        args.log.post(f'Spectral window options: {win}')
         if args.test:
             continue
         
         # Run
-        finalimage = imagename+'.tc_final.fits'
-        if os.path.isfile(finalimage) and RESUME:
-            casalog.post('Skipping: %s' % finalimage)
+        finalimage = imagename.with_suffix('12m.tc_final.fits')
+        if os.path.isfile(finalimage) and resume:
+            args.log.post(f'Skipping: {finalimage}')
         else:
-            casalog.post('Running yclean parallel')
+            args.log.post('Running yclean parallel')
             if not RESUME:
-                casalog.post('Cleaning directories')
-                if os.path.isdir(dirit):
-                    casalog.post('Deleting: %s' % dirit)
-                    os.system('rm -rf '+ dirit)
-                if os.path.isdir(source+'MASCARA.tc0.m'):
-                    casalog.post('Deleting: %sMASCARA.tc*.m' % source)
-                    os.system('rm -rf '+source+'MASCARA.tc*.m')
-            #execfile(os.path.join(diryclean, 'yclean_parallel.py'))
-            yclean()
+                args.log.post('Cleaning directories')
+                maski =  Path(f'{source}MASCARA.tc0.m')
+                if directory.is_dir():
+                    args.log.post(f'Deleting: {directory}')
+                    os.system(f'rm -rf {directory}')
+                if maski.is_dir():
+                    args.log.post(f'Deleting mask: {source}MASCARA.tc*.m')
+                    os.system(f'rm -rf {source}MASCARA.tc*.m')
+            yclean(vis, imagename, restfreq=restfreq, width=width, start=start,
+                   nchan=nchan, spw=spw, **args.tclean_params)
 
         # Store split filenames
         basename = win['basename']
         if basename not in finalcubes:
-            finalcubes[basename] = [finalimage]
+            args.finalcubes[basename] = [finalimage]
         else:
-            finalcubes[basename] += [finalimage]
+            args.finalcubes[basename].append([finalimage])
+
+def main(args: argparse.NameSpace) -> None:
+    """Program main.
+
+    Args:
+      args: command line args.
+    """
+    # Defaults
+    config_defaults = {
+        'restfreqs': '',
+        'chanrange': '~',
+        'names': '',
+        'widths': '',
+    }
+    tclean_defaults = {
+        'gridder': 'standard',
+        'specmode': 'cube',
+        'robust': '0.5',
+        'outframe': 'LSRK',
+        'interpolation': 'linear',
+        'weighting': 'briggs',
+        'deconvolver': 'multiscale',
+        'scales': '0,5,15',
+        'chanchunks': '-1',
+        'pblimit': '0.2',
+        'perchanweightdensity': 'true',
+        'phasecenter': '',
+        'uvtaper': '',
+    }
+    config_defaults.update(tclean_defaults)
+
+    # Pipe
+    pipe=[casa_logging.set_logging,
+          args_proc.set_config,
+          args_proc.get_tclean_params,
+          _run_yclean,
+    ]
+
+    # Command line options
+    parser = argparse.ArgumentParser(parents=[casa_logging.logging_parent()])
+    parser.add_argument('--basedir', default='', type=str,
+                        help='Base directory')
+    parser.add_argument('--resume', action='store_true',
+                        help='Resume if files are in yclean directory')
+    parser.add_argument('--test', action='store_true',
+                        help='Just print options used per spw')
+    parser.add_argument('uvdata', nargs=1, type=str,
+                        help='uv data ms')
+    parser.add_argument('configfile', nargs=1, type=str,
+                        help='Configuration file name')
+    parser.set_defaults(
+        tclean_params=None,
+        config=config_defaults,
+        section='yclean',
+        finalcubes=OrderedDict(),
+    )
+    args = parser.parse_args(args)
+    
+    # Run steps
+    for step in args.pipe:
+        step(args)
 
     # Join the cubes
     if args.test:
@@ -464,7 +513,7 @@ def main(args: Sequence) -> None:
 
         # Check existance
         outputfits = output + '.fits'
-        if RESUME and os.path.isfile(outputfits):
+        if args.resume and os.path.isfile(outputfits):
             casalog.post('Skipping: %s' % output)
             continue
         elif os.path.exists(outputfits):
@@ -478,7 +527,7 @@ def main(args: Sequence) -> None:
         else:
             casalog.post('Joining cubes: %r' % val)
             join_cubes(val, output, split_option(config, section, 'joinchans'),
-                    resume=RESUME)
+                    resume=args.resume)
 
     return True
         
