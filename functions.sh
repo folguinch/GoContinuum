@@ -161,59 +161,64 @@ function run_pbclean ()
     fi
 }
 
-################################################################################
-# CLEAN cubes with YCLEAN                                                      #
-################################################################################
-function run_yclean () 
-{
-    local script="$DIR/exec_yclean.py"
-    local logfile="$LOGS/casa_$(date --utc +%F_%H%M%S)_exec_yclean.log"
-    local flags=( "--logfile" "$logfile" )
-    if [[ $TESTING -eq 1 ]]
-    then
-      flags+=( "--test" )
-    fi
-    local cmd="$MPICASA $script ${flags[@]} $1 $CONFIG"
-    local finalimages=( ${CLEAN}/${SRC0}*.cube.image )
+#######################################
+# CLEAN cubes with YCLEAN.
+# Globals:
+#   CASA
+#   REDO
+#   YCLEAN
+#   DIR
+#   LOGS
+# Arguments:
+#   UV data
+#   Configuration file
+#######################################
+function run_yclean() {
+  local script logfile old_val
+  local -a flags
+  script="${DIR}/exec_yclean.py"
+  logfile="$LOGS/casa_$(date --utc +%F_%H%M%S)_exec_yclean.log"
+  flags=( "--logfile" "$logfile" "--nproc" "$NPROC" )
+  #local cmd="$CASA $script ${flags[@]} $1 $CONFIG"
     
-    cd $BASE
-    if [[ $REDO -eq 1 ]] || [[ ! -d $YCLEAN ]]
-    then
-        if [[ -d $YCLEAN ]]
-        then
-            logger "WARN" "Emptying YCLEAN directory: $YCLEAN"
-            rm -r ${YCLEAN}/*
-            rm -r *MASCARA.tc*
-        else
-            mkdir $YCLEAN
+  # Run by case
+  if [[ $REDO -eq 1 ]] || [[ ! -d $YCLEAN ]]; then
+    # Check yclean directory
+    if [[ -d $YCLEAN ]]; then
+      logger "WARN" "Emptying YCLEAN directory: $YCLEAN"
+      for old_val in ${YCLEAN}/*; do
+        if [[ -d $old_val ]]; then
+          rm -r "${old_val}"
         fi
-        if [[ -d $CLEAN ]] && [[ -e ${finalimages[0]} ]]
-        then
-            logger "WARN" "Emptying CLEAN directory: $CLEAN"
-            rm -r ${CLEAN}/${SRC0}*.cube*
-        elif [[ ! -d $CLEAN ]]
-        then
-            mkdir $CLEAN
-        fi
-        logger "Running YCLEAN"
-        set +e
-        $cmd
-        set -e
-        logger "YCLEAN succeded"
+      done
     else
-        if [[ $REDO -eq 0 ]] 
-        then
-            cmd="$MPICASA $script ${flags[@]} --resume $1 $CONFIG"
-            #test -e ${finalimages[0]}  && logger "YCLEAN already ran" || $cmd
-            logger "Resuming YCLEAN"
-            set +e
-            $cmd
-            set -e
-        else
-            logger "YCLEAN already ran"
-        fi
+      mkdir $YCLEAN
     fi
-    cd -
+
+    # Check clean directory
+    #if [[ -d $CLEAN ]] && [[ -e ${finalimages[0]} ]]; then
+    #  logger "WARN" "Emptying CLEAN directory: $CLEAN"
+    #  rm -r ${CLEAN}/${SRC0}*.cube*
+    #elif [[ ! -d $CLEAN ]]; then
+    #  mkdir $CLEAN
+    #fi
+    logger "Running YCLEAN"
+    set +e
+    $CASA $script ${flags[@]} $1 $2
+    set -e
+    logger "YCLEAN succeded"
+  else
+    if [[ $REDO -eq 0 ]]; then
+      flags+=( "--resume" )
+      #test -e ${finalimages[0]}  && logger "YCLEAN already ran" || $cmd
+      logger "Resuming YCLEAN"
+      set +e
+      $CASA $script ${flags[@]} $1 $2
+      set -e
+    else
+      logger "YCLEAN already ran"
+    fi
+  fi
 }
 
 ################################################################################
