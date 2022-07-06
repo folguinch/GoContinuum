@@ -1,32 +1,31 @@
 """Execute yclean."""
-from collections import Counter, OrderedDict
+from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Callable, List, Optional, Sequence, TypeVar
+from typing import Any, Callable, List, Optional, Sequence, TypeVar, Dict
 import argparse
-import configparser as cparser
 import sys
-import time
+import os
 
+from casatasks import exportfits
+from casatools import image
 import numpy as np
-import scipy
-import scipy.ndimage
 
-# Local utils
 from go_continuum import args_proc
 from go_continuum import casa_logging
 import go_continuum.casa_utils as utils
-try:
-    from yclean.yclean_parallel import yclean
-except ImportError:
-    try:
-        from go_continuum.yclean_src.yclean_parallel import yclean
-    except ImportError as exc:
-        raise ImportError('YCLEAN is not available') from exc
+#try:
+from yclean.yclean_parallel import yclean
+#except ModuleNotFoundError:
+#    try:
+#        from go_continuum.yclean_src.yclean_parallel import yclean
+#    except ModuleNotFoundError as exc:
+#        raise ModuleNotFoundError('YCLEAN is not available') from exc
 
 # Types
 Config = TypeVar('Config')
+NameSpace = TypeVar('NameSpace')
 
-def split_option(cfg: Config, 
+def split_option(cfg: Config,
                  option: str,
                  ignore_sep: Sequence[str] = (),
                  dtype: Optional[Callable] = None) -> List:
@@ -56,7 +55,7 @@ def split_option(cfg: Config,
     # Map dtype
     if dtype is not None:
         vals = list(map(dtype, vals))
- 
+
     return vals
 
 def get_nchans(chanrange: str) -> int:
@@ -89,7 +88,7 @@ def fill_window(chanranges: Sequence[str], **kwargs) -> List[Dict[str, Any]]:
     Args:
       chanranges: list with the channel ranges to split the spw.
       kwargs: additional window information.
-    
+
     Returns:
       A list with the window information.
     """
@@ -104,7 +103,7 @@ def fill_window(chanranges: Sequence[str], **kwargs) -> List[Dict[str, Any]]:
         # Defaults
         info = {'width': kwargs.get('width', ''), 'basename': kwargs['name']}
         info.update(kwargs)
-        
+
         # Fill info
         try:
             info['start'] = int(chanran.split('~')[0])
@@ -120,7 +119,7 @@ def fill_window(chanranges: Sequence[str], **kwargs) -> List[Dict[str, Any]]:
 
     return window
 
-def fill_names(basenames: Sequence[str], spws: Sequence, 
+def fill_names(basenames: Sequence[str], spws: Sequence,
                default: str = 'spw') -> List:
     """Create base names for spws.
 
@@ -210,7 +209,7 @@ def get_windows(vis: Path, cfg: Config, log: Callable = print) -> List:
     widths = match_length(cfg, 'widths', spws, log=log)
 
     # Spectral window real values after concat
-    spws_val = utils.get_spws_indices(vis, spws=spws)
+    spws_val = utils.get_spws_indices(vis, spws=spws, log=log)
 
     # Iterate over spectral windows
     windows = []
@@ -229,147 +228,89 @@ def get_windows(vis: Path, cfg: Config, log: Callable = print) -> List:
         kwargs = dict(zip(info0, info))
         if f'width{spw}' in cfg:
             kwargs['width'] = cfg[f'width{spw}']
-        
+
         # Fill the window information
-        windows.append(fill_window(chanrans, **kwargs))
+        windows += fill_window(chanrans, **kwargs)
 
     return windows
 
-def crop_spectral_axis(chans, outfile):
-    s = ia.summary()
-    ind = np.where(s['axisnames']=='Frequency')[0][0]
-
-    aux = ia.crop(outfile=outfile, axes=ind, chans=chans)
-    aux.close()
-
-def put_rms(imagename, box=''):
-    rms = imhead(imagename=imagename, mode='get', hdkey='rms')
-    if rms is not False:
-        casalog.post('rms already in header')
-        casalog.post('Image rms: %f mJy/beam' % (rms*1E3,))
-        return
-
-    # Get rms
-    casalog.post('Computing rms for: ' + imagename)
-    stats = imstat(imagename=imagename, box=box, stokes='I')
-    if box=='':
-        rms = 1.482602219*stats['medabsdevmed'][0]
-    else:
-        rms = stats['rms'][0]
-
-    # Put in header
-    imhead(imagename=imagename, mode='put', hdkey='rms',
-            hdvalue=rms)
-    casalog.post('Image rms: %f mJy/beam' % (rms*1E3,))
-
-def join_cubes(inputs, output, channels, resume=False):
-    """Join cubes at specific channels
-    """
-    assert len(channels)==len(inputs)
-
-    # Concatenated image
-    imagename = os.path.expanduser(output)
-
-    # Join
-    if resume and os.path.isdir(imagename):
-        casalog.post('Skipping concatenated image: %s' % imagename)
-    else:
-        if os.path.isdir(imagename):
-            os.system('rm -rf %s' % imagename)
-        # Crop images
-        for i,(chans,inp) in enumerate(zip(channels, inputs)):
-            ia.open(os.path.expanduser(inp))
-            img_name = 'temp%i.image' % i
-            if os.path.isdir(img_name):
-                os.system('rm -rf temp*.image')
-            aux = crop_spectral_axis(chans, img_name)
-            ia.close()
-
-            if i==0:
-                filelist = img_name
-            else:
-                filelist += ' '+img_name 
-
-        # Concatenate
-        ia.imageconcat(outfile=imagename, infiles=filelist)
-        ia.close()
-
-    # Put rms
-    put_rms(imagename)
-
-    # Export fits
-    if resume and os.path.isfile(imagename+'.fits'):
-        casalog.post('Skipping FITS export')
-    else:
-        exportfits(imagename=imagename, fitsimage=imagename+'.fits',
-                overwrite=True)
-
-    # Clean up
-    casalog.post('Cleaning up')
-    os.system('rm -rf temp*.image')
-
-    return True
-
-<<<<<<< HEAD
-def main(args: Sequence) -> None:
-    """Execute `yclean`.
+def crop_spectral_axis(img: image,
+                       chans: str,
+                       outfile: Path):
+    """Crop image along the spectral axis.
 
     Args:
-      args: command line arguments.
+      img: CASA image object.
+      chans: channel range.
+      outfile: output image file.
     """
-    # Command line options
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--basedir', default='', type=str,
-                        help='Base directory')
-    parser.add_argument('--logfile', default=None, nargs=1, type=str,
-                        help='Log file name')
-    parser.add_argument('--resume', action='store_true',
-                        help='Resume if files are in yclean directory')
-    parser.add_argument('--test', action='store_true',
-                        help='Just print options used per spw')
-    parser.add_argument('uvdata', nargs=1, type=str,
-                        help='uv data ms')
-    parser.add_argument('configfile', nargs=1, type=str,
-                        help='Configuration file name')
-    args = parser.parse_args(args)
+    # Identify spectral axis
+    summ = img.summary()
+    ind = np.where(summ['axisnames'] == 'Frequency')[0][0]
 
-    # Logging
-    if args.logfile is not None:
-        casalog.setlogfile(args.logfile[0])
+    # Crop image
+    aux = img.crop(outfile=str(outfile), axes=ind, chans=chans)
+    aux.close()
 
-    # Configuration
-    parserfile = Path(args.configfile[0])
-    config_defaults = {
-        'restfreqs': '',
-        'chanrange': '~',
-        'names': '',
-        'widths': '',
-    }
-    tclean_defaults = {
-        'gridder': 'standard',
-        'specmode': 'cube',
-        'robust': '0.5',
-        'outframe': 'LSRK',
-        'interpolation': 'linear',
-        'weighting': 'briggs',
-        'deconvolver': 'multiscale',
-        'scales': '0,5,15',
-        'chanchunks': '-1',
-        'pblimit': '0.2',
-        'perchanweightdensity': 'true',
-        'phasecenter': '',
-        'uvtaper': '',
-    }
-    config_defaults.update(tclean_defaults)
-    configuration = cparser.ConfigParser(defaults=config_defaults)
-    if parserfile.exists():
-        configuration.read(args.configfile[0])
+def join_cubes(inputs: Sequence[Path],
+               output: Path,
+               channels: Sequence[str],
+               resume: bool = False,
+               log: Callable = print) -> None:
+    """Join cubes at specific channels.
+
+    Args:
+      inputs: input cubes to join.
+      output: file name.
+      channels: channel ranges for spectral cropping.
+      resume: optional; resume calculations?
+      log: optional; logging function.
+    """
+    # Check
+    if len(channels) != len(inputs):
+        raise ValueError('Different length of input and channels')
+
+    # Concatenated image
+    imagename = output.expanduser()
+
+    # Join
+    if resume and imagename.is_dir():
+        log(f'Skipping concatenated image: {imagename}')
     else:
-        raise IOError(f'Config file does not exists: {parserfile}')
-    section = 'yclean'
-    cfg = configuration[section]
+        if imagename.is_dir():
+            os.system(f'rm -rf {imagename}')
+        # Crop images
+        filelist = []
+        for i, (chans, inp) in enumerate(zip(channels, inputs)):
+            img = image()
+            img = img.open(str(inp.expanduser()))
+            img_name = Path(f'temp{i}.image')
+            if img_name.is_dir():
+                os.system('rm -rf temp*.image')
+            crop_spectral_axis(img, chans, img_name)
+            img.close()
 
-def _run_yclean(args: argparse.NameSpace) -> None:
+            # Store filenames
+            filelist.append(str(img_name))
+        filelist = ' '.join(filelist)
+
+        # Concatenate
+        img.imageconcat(outfile=str(imagename), infiles=filelist)
+        img.close()
+
+    # Export fits
+    imagefits = imagename.with_suffix('.image.fits')
+    if resume and imagefits.exists():
+        log('Skipping FITS export')
+    else:
+        exportfits(imagename=str(imagename), fitsimage=str(imagefits),
+                   overwrite=True)
+
+    # Clean up
+    log('Cleaning up')
+    os.system('rm -rf temp*.image')
+
+def _run_yclean(args: NameSpace) -> None:
     """Run yclean."""
     # Resume?
     resume = args.resume
@@ -377,66 +318,108 @@ def _run_yclean(args: argparse.NameSpace) -> None:
         args.log.post('Resume turned on')
 
     # Source data
-    source = args.config['field']
+    if 'field' in args.config:
+        source = args.config['field']
+    elif 'source' in args.config:
+        source = args.config['source']
+    else:
+        raise ValueError('Required values field or source not in config')
     vis = Path(args.uvdata[0])
 
     # Spectral setup per channel window
     wins = get_windows(vis, args.config, log=args.log.post)
-    print(wins)
-    raise Exception
+
+    # Compute common beam?
+    common_beam = 'joinchans' not in args.config
 
     # Run YCLEAN
     for win in wins:
-        it = 0
         # Directory
         name = win['name']
         directory = Path(args.basedir)
-        directory = directory / 'yclean' /  f'{source}_{name}')
+        directory = directory / 'yclean' /  f'{source}_{name}'
         args.log.post('-' * 80)
         args.log.post(f'Procesing {name}')
 
         # Some clean values
-        vis = args.uvdata[0]
         restfreq = win['freq']
         width = win['width']
         start = win['start']
         nchan = int(win['nchan'])
         spw = win['spw_val']
-        imagename = directory / f'auto{source}_{name}.12m'
+        imagename = directory / f'auto{source}_{name}'
 
         # Log
         args.log.post(f'vis = {vis}')
         args.log.post(f'imagename = {imagename}')
         args.log.post(f'Spectral window options: {win}')
-        if args.test:
-            continue
-        
+
         # Run
-        finalimage = imagename.with_suffix('12m.tc_final.fits')
-        if os.path.isfile(finalimage) and resume:
+        if finalimage.exists() and resume:
             args.log.post(f'Skipping: {finalimage}')
         else:
-            args.log.post('Running yclean parallel')
-            if not RESUME:
+            args.log.post('Running yclean')
+            if not resume:
                 args.log.post('Cleaning directories')
-                maski =  Path(f'{source}MASCARA.tc0.m')
                 if directory.is_dir():
                     args.log.post(f'Deleting: {directory}')
                     os.system(f'rm -rf {directory}')
-                if maski.is_dir():
-                    args.log.post(f'Deleting mask: {source}MASCARA.tc*.m')
-                    os.system(f'rm -rf {source}MASCARA.tc*.m')
-            yclean(vis, imagename, restfreq=restfreq, width=width, start=start,
-                   nchan=nchan, spw=spw, **args.tclean_params)
+            finalimage, _ = yclean(vis, imagename, nproc=args.nproc[0],
+                                   common_beam=common_beam, log=args.log.post,
+                                   restfreq=restfreq, width=width, start=start,
+                                   nchan=nchan, spw=spw, **args.tclean_params)
 
         # Store split filenames
         basename = win['basename']
-        if basename not in finalcubes:
+        if basename not in args.finalcubes:
             args.finalcubes[basename] = [finalimage]
         else:
-            args.finalcubes[basename].append([finalimage])
+            args.finalcubes[basename].append(finalimage)
 
-def main(args: argparse.NameSpace) -> None:
+def _join_cubes(args: NameSpace) -> None:
+    """Join the final cubes."""
+    # Check if step is needed
+    if 'joinchans' not in args.config:
+        return
+
+    # Source name for naming (reverse if for future source dependent
+    # processing)
+    if 'source' in args.config:
+        source = args.config['source']
+    elif 'field' in args.config:
+        source = args.config['field']
+    else:
+        raise ValueError('Required values field or source not in config')
+
+    # Join the cubes
+    directory = Path(args.basedir) / 'yclean'
+    for suff, val in args.finalcubes.items():
+        # Output name
+        if 'out_prefix' in args.config:
+            prefix = args.config['out_prefix']
+            output = directory / f'{prefix}.{suff}.image'
+        else:
+            output = directory / f'{source}.{suff}.image'
+
+        # Check existance
+        outputfits = output.with_suffix('.image.fits')
+        if args.resume and outputfits.exists():
+            args.log.post(f'Skipping: {output}')
+        elif outputfits.exists():
+            args.log.post(f'Overwriting: {output}')
+            os.system(f'rm -rf {output} {outputfits}')
+
+        # Concatenate
+        if len(val) == 1:
+            args.log.post(f'Copying cube: {val}')
+            os.system(f'rsync -auvr {val[0]} {output}')
+        else:
+            args.log.post(f'Joining cubes: {val}')
+            join_cubes(val, output,
+                       split_option(args.config, 'joinchans'),
+                       resume=args.resume, log=args.log.post)
+
+def main(args: List) -> None:
     """Program main.
 
     Args:
@@ -477,10 +460,10 @@ def main(args: argparse.NameSpace) -> None:
     parser = argparse.ArgumentParser(parents=[casa_logging.logging_parent()])
     parser.add_argument('--basedir', default='', type=str,
                         help='Base directory')
+    parser.add_argument('--nproc', nargs=1, type=int, default=[5],
+                        help='Number of processes for parallel processing')
     parser.add_argument('--resume', action='store_true',
                         help='Resume if files are in yclean directory')
-    parser.add_argument('--test', action='store_true',
-                        help='Just print options used per spw')
     parser.add_argument('uvdata', nargs=1, type=str,
                         help='uv data ms')
     parser.add_argument('configfile', nargs=1, type=str,
@@ -492,45 +475,12 @@ def main(args: argparse.NameSpace) -> None:
         finalcubes=OrderedDict(),
     )
     args = parser.parse_args(args)
-    
+
     # Run steps
-    for step in args.pipe:
+    for step in pipe:
         step(args)
 
-    # Join the cubes
-    if args.test:
-        return True
-    for suff, val in finalcubes.items():
-        # Output name
-        if config.has_option(section, 'out_prefix'):
-            prefix = config.get(section, 'out_prefix')
-            output = os.path.join(args.basedir, 'clean', 
-                    prefix+'.%s.cube.image' % suff)
-        else:
-            output = os.path.join(args.basedir, 'clean', 
-                    source+'.%s.cube.image' % suff)
-        output = os.path.expanduser(output)
-
-        # Check existance
-        outputfits = output + '.fits'
-        if args.resume and os.path.isfile(outputfits):
-            casalog.post('Skipping: %s' % output)
-            continue
-        elif os.path.exists(outputfits):
-            casalog.post('Overwriting: %s' % output)
-            os.system('rm -rf %s %s' % (output, outputfits))
-
-        # Concatenate
-        if len(val)==1:
-            casalog.post('Copying cube: %r' % val)
-            os.system('rsync -auvr $s $s' % (val[0], output))
-        else:
-            casalog.post('Joining cubes: %r' % val)
-            join_cubes(val, output, split_option(config, section, 'joinchans'),
-                    resume=args.resume)
-
     return True
-        
+
 if __name__=='__main__':
     main(sys.argv[1:])
-    exit()
