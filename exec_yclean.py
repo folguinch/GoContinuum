@@ -355,19 +355,16 @@ def _run_yclean(args: NameSpace) -> None:
         args.log.post(f'Spectral window options: {win}')
 
         # Run
-        if finalimage.exists() and resume:
-            args.log.post(f'Skipping: {finalimage}')
-        else:
-            args.log.post('Running yclean')
-            if not resume:
-                args.log.post('Cleaning directories')
-                if directory.is_dir():
-                    args.log.post(f'Deleting: {directory}')
-                    os.system(f'rm -rf {directory}')
-            finalimage, _ = yclean(vis, imagename, nproc=args.nproc[0],
-                                   common_beam=common_beam, log=args.log.post,
-                                   restfreq=restfreq, width=width, start=start,
-                                   nchan=nchan, spw=spw, **args.tclean_params)
+        args.log.post('Running yclean')
+        if not resume and directory.is_dir():
+            args.log.post('Cleaning directories')
+            args.log.post(f'Deleting: {directory}')
+            os.system(f'rm -rf {directory}')
+        directory.mkdir(exist_ok=True, parents=True)
+        finalimage, _ = yclean(vis, imagename, nproc=args.nproc[0],
+                               common_beam=common_beam, log=args.log.post,
+                               restfreq=restfreq, width=width, start=start,
+                               nchan=nchan, spw=spw, **args.tclean_params)
 
         # Store split filenames
         basename = win['basename']
