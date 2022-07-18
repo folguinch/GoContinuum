@@ -330,7 +330,10 @@ def _run_yclean(args: NameSpace) -> None:
     wins = get_windows(vis, args.config, log=args.log.post)
 
     # Compute common beam?
-    common_beam = 'joinchans' not in args.config
+    if 'joinchans' not in args.config:
+        common_beam = args.common_beam
+    else:
+        common_beam = False
 
     # Run YCLEAN
     for win in wins:
@@ -461,6 +464,8 @@ def main(args: List) -> None:
                         help='Number of processes for parallel processing')
     parser.add_argument('--resume', action='store_true',
                         help='Resume if files are in yclean directory')
+    parser.add_argument('--common_beam', action='store_true',
+                        help='Compute the common beam of the final cube')
     parser.add_argument('uvdata', nargs=1, type=str,
                         help='uv data ms')
     parser.add_argument('configfile', nargs=1, type=str,

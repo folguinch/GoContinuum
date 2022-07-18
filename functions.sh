@@ -169,6 +169,7 @@ function run_pbclean ()
 #   YCLEAN
 #   DIR
 #   LOGS
+#   COMMONBEAM
 # Arguments:
 #   UV data
 #   Configuration file
@@ -177,9 +178,14 @@ function run_yclean() {
   local script logfile old_val
   local -a flags
   script="${DIR}/exec_yclean.py"
-  logfile="$LOGS/casa_$(date --utc +%F_%H%M%S)_exec_yclean.log"
+  logfile="${LOGS}/casa_$(date --utc +%F_%H%M%S)_exec_yclean.log"
   flags=( "--logfile" "$logfile" "--nproc" "$NPROC" )
   #local cmd="$CASA $script ${flags[@]} $1 $CONFIG"
+
+  # Common beam
+  if [[ $COMMONBEAM -eq 1 ]]; then
+    flags+=( "--common_beam" )
+  fi
     
   # Run by case
   if [[ $REDO -eq 1 ]] || [[ ! -d $YCLEAN ]]; then
