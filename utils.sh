@@ -56,10 +56,16 @@ function logger() {
   else
     msg="$sep2"
   fi
+
+  # Initiate logger file
+  if [[ ! -e $LOGGERFILE ]]; then
+    touch $LOGGERFILE
+  fi
   
   # Print according to the verbose level
   if [[ $VERBOSE -eq 1 ]]; then
     if [[ $level != "DEBUG" ]]; then
+      # Log message
       echo "${msg}" | tee -a "${LOGGERFILE}"
       if [[ $level == "ERROR" ]]; then
         exit 1

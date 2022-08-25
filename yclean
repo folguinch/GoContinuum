@@ -1,14 +1,8 @@
 #!/bin/bash
 ################################################################################
-#                       ALMA Data reduction pipeline                           #
+#                       ALMA data cube imaging                                 #
 #                                                                              #
-# Produce ALMA continuum and data cubes. This program performs continuum       #
-# channel identification and performs continuum subtraction to produce the     #
-# data products.                                                               #
-#                                                                              #
-# Change History                                                               #
-# 2019/01/16  Fernando Olguin   Initial version.                               #
-#             Patricio Sanhueza                                                #
+# Produce ALMA data cubes using YCLEAN (Contreras et al. 2018).                #
 #                                                                              #
 ################################################################################
 ################################################################################
@@ -32,7 +26,7 @@ declare -i REDO=1
 declare -i VERBOSE=1
 declare -i NPROC=5
 declare -i COMMONBEAM=0
-declare YCLEAN
+declare YCLEAN uvdata config option
 
 ################################################################################
 ################################################################################
@@ -86,16 +80,14 @@ function check_environment() {
 # Main program.                                                                #
 ################################################################################
 ################################################################################
-declare uvdata config
 # Setup logger
 # Initialize logger file
-logger "SEP" 1
 if [[ ! -d $LOGS ]]; then
   mkdir $LOGS
 fi
+logger "SEP" 1
 
 # Process the input options. Add options as needed
-declare option
 while getopts $OPTSPEC option; do
   if [[ $option == "-" ]]; then
     opt="$OPTARG"
@@ -160,4 +152,4 @@ MPICASA="$(which mpicasa) -n $NPROC $(which casa)"
 
 logger "DEBUG" "$(declare -p | grep "declare -- *")"
 run_yclean "$uvdata" "$config"
-echo "QMD"
+echo "YCLEAN has ended"

@@ -9,14 +9,14 @@ import casa_utils as utils
 NameSpace = TypeVar('NameSpace')
 
 def set_config(args: NameSpace):
-    """The `config` value in `args`.
+    """Setup the `config` value in `args`.
 
     It assumes:
 
     - A `configfile` arguments exists in the parser.
     - The initial value of `config` is a dictionary with default values for the
       `configparser`.
-    - A `section` value is stored in the parser.
+    - A `section` value is stored in the argument parser.
     """
     # Configuration file
     parserfile = Path(args.configfile[0])
