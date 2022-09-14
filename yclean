@@ -26,6 +26,7 @@ declare -i REDO=1
 declare -i VERBOSE=1
 declare -i NPROC=5
 declare -i COMMONBEAM=0
+declare -i FULL=0
 declare YCLEAN uvdata config option
 
 ################################################################################
@@ -53,6 +54,7 @@ Options:
   -h, --help            Help
   --noredo              Skip steps some steps already finished
   --common_beam         Compute common bean of final cube
+  --full                Save intermediate images and masks
   --vv                  Set verbose level to debug
 fin
   exit 1
@@ -106,8 +108,11 @@ while getopts $OPTSPEC option; do
     noredo ) # Change REDO
       REDO=0
       ;;
-    coomon_beam ) # Compute common beam?
+    common_beam ) # Compute common beam?
       COMMONBEAM=1
+      ;;
+    full ) # Save images?
+      FULL=1
       ;;
     b | base ) # Base directory
       BASE="$OPTARG"

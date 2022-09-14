@@ -170,6 +170,7 @@ function run_pbclean ()
 #   DIR
 #   LOGS
 #   COMMONBEAM
+#   FULL
 # Arguments:
 #   UV data
 #   Configuration file
@@ -185,6 +186,11 @@ function run_yclean() {
   # Common beam
   if [[ $COMMONBEAM -eq 1 ]]; then
     flags+=( "--common_beam" )
+  fi
+
+  # Lite or full
+  if [[ $FULL -eq 1 ]]; then
+    flags+=( "--full" )
   fi
     
   # Run by case

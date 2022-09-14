@@ -365,9 +365,11 @@ def _run_yclean(args: NameSpace) -> None:
             os.system(f'rm -rf {directory}')
         directory.mkdir(exist_ok=True, parents=True)
         finalimage, _ = yclean(vis, imagename, nproc=args.nproc[0],
-                               common_beam=common_beam, log=args.log.post,
-                               restfreq=restfreq, width=width, start=start,
-                               nchan=nchan, spw=spw, **args.tclean_params)
+                               common_beam=common_beam, resume=resume,
+                               full=args.full, log=args.log.post,
+                               restfreq=restfreq, width=width,
+                               start=start, nchan=nchan,
+                               spw=spw, **args.tclean_params)
 
         # Store split filenames
         basename = win['basename']
@@ -466,6 +468,8 @@ def main(args: List) -> None:
                         help='Resume if files are in yclean directory')
     parser.add_argument('--common_beam', action='store_true',
                         help='Compute the common beam of the final cube')
+    parser.add_argument('--full', action='store_true',
+                        help='Store intermediate images and masks')
     parser.add_argument('uvdata', nargs=1, type=str,
                         help='uv data ms')
     parser.add_argument('configfile', nargs=1, type=str,
