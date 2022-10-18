@@ -1,32 +1,31 @@
-"""Utilities for CASA programs and scripts."""
+"""Utilities for working with CASA."""
+from inspect import signature
+from typing import Optional, Sequence, List, TypeVar, Callable
 from pathlib import Path
-from typing import Callable, List, Optional
 from configparser import ConfigParser
 from collections import OrderedDict
 import inspect
 
-#from applycal_cli import applycal
-#from split_cli import split
-#from casatasks import applycal, split, imhead, imstat, exportfits, vishead,
-import casatasks as tasks
-import casatools
-import numpy as np
+from casatasks import vishead, tclean
+
+# Types
+Logger = TypeVar('Logger')
 
 def get_spws(vis: Path) -> List:
     """Retrieve the spws in a visibility ms."""
-    return tasks.vishead(vis=vis, mode='get', hdkey='spw_name')[0]
+    return vishead(vis=str(vis), mode='get', hdkey='spw_name')[0]
 
-def get_spws_indices(vis: Path,
-                     spws: Optional[str] = None,
+def get_spws_indices(vis: 'Path',
+                     spws: Optional[Sequence[str]] = None,
                      log: Callable = print) -> List:
-    """Get the indices for the spws.
+    """Get the indices of the spws.
 
-    If the spectral windows are duplicated in the vis, the same spectral
-    windows are grouped together.
+    This task search for duplicated spws (e.g. after measurement set
+    concatenation) and groups the spws indices.
 
     Args:
-      vis: visibility ms.
-      spws: optional; spw numbers to map to.
+      vis: measurement set.
+      spws: optional; selected spectral windows.
       log: optional; logging function.
 
     Returns:
@@ -51,19 +50,27 @@ def get_spws_indices(vis: Path,
 
     # Spectral windows indices
     if spws is not None:
-        spw_ind = map(int, spws)
+        spw_ind = list(map(int, spws))
     else:
-        spw_ind = range(len(name_set))
+        spw_ind = list(range(len(name_set)))
 
-    return [spw for i,spw in enumerate(spwinfo.values()) if i in spw_ind]
+    return [spw for i, spw in enumerate(spwinfo.values()) if i in spw_ind]
+
+def check_tclean_params(config: ConfigParser,
+                        required: Sequence[str] = ('cell', 'imsize')) -> None:
+    """Check required config params."""
+    # Check required arguments are in config
+    for opt in required:
+        if opt not in config:
+            raise KeyError(f'Missing {opt} in configuration')
 
 def get_tclean_params(
     config: ConfigParser,
-    ignore_keys: List[str] = ('vis', 'imagename', 'spw'),
-    float_keys: List[str]  = ('robust', 'pblimit', 'pbmask'),
-    int_keys: List[str] = ('niter', 'chanchunks'),
-    bool_keys: List[str] = ('interactive', 'parallel', 'pbcor',
-                            'perchanweightdensity'),
+    ignore_keys: Sequence[str] = ('vis', 'imagename', 'spw'),
+    float_keys: Sequence[str]  = ('robust', 'pblimit', 'pbmask'),
+    int_keys: Sequence[str] = ('niter', 'chanchunks'),
+    bool_keys: Sequence[str] = ('interactive', 'parallel', 'pbcor',
+                                'perchanweightdensity'),
 ) -> dict:
     """Filter input parameters and convert values to the correct type.
 
@@ -74,9 +81,12 @@ def get_tclean_params(
       int_keys: optional; tclean parameters to convert to int.
       bool_keys: optional; tclean parameters to convert to bool.
     """
+    # Check required parameters
+    check_tclean_params(config)
+
+    # Get paramters
     tclean_pars = {}
-    keys = inspect.signature(tasks.tclean).parameters.keys()
-    for key in keys:
+    for key in signature(tclean).parameters:
         if key not in config or key in ignore_keys:
             continue
         #Check for type:
@@ -88,6 +98,8 @@ def get_tclean_params(
             tclean_pars[key] = config.getboolean(key)
         elif key == 'imsize':
             tclean_pars[key] = list(map(int, config.get(key).split()))
+            if len(tclean_pars[key]) == 1:
+                tclean_pars[key] = tclean_pars[key] * 2
         elif key == 'scales':
             tclean_pars[key] = list(map(int, config.get(key).split(',')))
         else:
@@ -338,3 +350,5 @@ def crop_spectral_axis(imagename: Path, chans: str, outfile: Path) -> None:
 #            newval += [os.path.realpath(os.path.expandvars(
 #                                        os.path.expanduser(val)))]
 #        setattr(namespace, self.dest, newval)
+=======
+>>>>>>> 89cfd72200ba9cf0d8c7f4a5ebb0a69a2b573807

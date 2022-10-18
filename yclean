@@ -1,30 +1,50 @@
 #!/bin/bash
 ################################################################################
-#                       ALMA Data reduction pipeline                           #
+#                       ALMA data cube imaging                                 #
 #                                                                              #
-# Produce ALMA continuum and data cubes. This program performs continuum       #
-# channel identification and performs continuum subtraction to produce the     #
-# data products.                                                               #
-#                                                                              #
-# Change History                                                               #
-# 2019/01/16  Fernando Olguin   Initial version.                               #
-#             Patricio Sanhueza                                                #
+# Produce ALMA data cubes using YCLEAN (Contreras et al. 2018).                #
 #                                                                              #
 ################################################################################
 ################################################################################
 ################################################################################
-
 # Bash options
 set -e
 
+# Environmental
+export MPICASA
+
+# Constants
+readonly DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+readonly LOGS="logs"
+readonly LOGGERFILE="$LOGS/yclean_debug.log"
+readonly CASA="python3"
+
+# Globals
+declare BASE="./"
+declare OPTSPEC=":htn:b:-:"
+declare -i REDO=1
+declare -i VERBOSE=1
+declare -i NPROC=5
+declare -i COMMONBEAM=0
+declare -i FULL=0
+declare YCLEAN uvdata config option
+
 ################################################################################
-# Usage                                                                        #
 ################################################################################
-function usage ()
-{
-    # Print usage and exit with error
-    cat <<fin
-Usage: yclean [-h|--help] [--noredo] [--vv] config uvdata
+# Functions                                                                    #
+################################################################################
+################################################################################
+# Import functions
+source ${DIR}/utils.sh
+source ${DIR}/functions.sh
+
+#######################################
+# Usage function.
+#######################################
+function usage() {
+  # Print usage and exit with error
+  cat <<fin
+Usage: yclean [-h|--help] [--noredo] [--common_beam] [--vv] config uvdata
 
 Parameters:
   config                Configuration file
@@ -33,135 +53,108 @@ Parameters:
 Options:
   -h, --help            Help
   --noredo              Skip steps some steps already finished
+  --common_beam         Compute common bean of final cube
+  --full                Save intermediate images and masks
   --vv                  Set verbose level to debug
 fin
-    exit 1
+  exit 1
 }
 
-################################################################################
-# Check directories exist                                                      #
-################################################################################
-function check_environment () 
-{
-    if [[ ! -d $YCLEAN ]]
-    then
-        logger "Creating yclean directory"
-        mkdir $YCLEAN
-    fi
-    if [[ ! -d $CLEAN ]]
-    then
-        logger "Creating clean directory"
-        mkdir $CLEAN
-    fi
-}
-
-################################################################################
-# Main                                                                         #
-################################################################################
-function main () 
-{
-    # Check that all the directories exist
-    #check_environment
-
-    # Run yclean
-    run_yclean $UVDATA 
+#######################################
+# Check directories.
+# Globals:
+#   YCLEAN
+#   CLEAN
+#######################################
+function check_environment() {
+  if [[ ! -d $YCLEAN ]]; then
+    logger "Creating yclean directory"
+    mkdir $YCLEAN
+  fi
+  if [[ ! -d $CLEAN ]]; then
+    logger "Creating clean directory"
+    mkdir $CLEAN
+  fi
 }
 
 ################################################################################
 ################################################################################
-# Main program                                                                 #
+# Main program.                                                                #
 ################################################################################
 ################################################################################
-
-##source /home/myso/share/binary_project/maat_venv/env/bin/activate
-# Initialize variables
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-BASE="./"
-OPTSPEC=":htn:b:-:"
-REDO=1
-TESTING=0
-VERBOSE=1
-NPROC=5
-
 # Setup logger
 # Initialize logger file
-LOGS="logs"
-if [[ ! -d $LOGS ]]
-then
-    mkdir $LOGS
+if [[ ! -d $LOGS ]]; then
+  mkdir $LOGS
 fi
-LOGGERFILE="$LOGS/yclean_debug.log"
-
-# Source utils
-source $DIR/utils.sh
 logger "SEP" 1
 
-################################################################################
-# Process the input options. Add options as needed.                            #
-################################################################################
-# Get the options
+# Process the input options. Add options as needed
 while getopts $OPTSPEC option; do
-    if [[ $option == "-" ]]
-    then
-        opt="$OPTARG"
-        if [[ ${!OPTIND} == -* ]] 
-        then
-            OPTARG=":"
-        else
-            OPTARG="${!OPTIND}"
-        fi
+  if [[ $option == "-" ]]; then
+    opt="$OPTARG"
+    if [[ ${!OPTIND} == -* ]]; then
+      OPTARG=":"
     else
-        opt="$option"
+      OPTARG="${!OPTIND}"
     fi
-    case $opt in
-        h | help ) # display Help
-            usage;;
-        noredo ) # Change REDO
-            REDO=0;;
-        t | test ) # Run yclean in test mode
-            TESTING=1;;
-        noredo ) # Change REDO
-            REDO=0;;
-        b | base ) # Base directory
-            BASE="$OPTARG"
-            if [[ $opt == "base" ]]
-            then
-                OPTIND=$((OPTIND+1))
-            fi;;
-        n | nproc ) # Number of processes for parallel
-            NPROC="$OPTARG"
-            if [[ $opt == "nproc" ]]
-            then
-                OPTIND=$((OPTIND+1))
-            fi;;
-        vv ) # Increase verbose level
-            VERBOSE=2
-            logger "Previous messages written to file";;
-        \? ) # incorrect option
-            echo "ERROR: Invalid option: -$OPTARG"
-            usage;;
-        : ) # invalid argument
-            echo "ERROR: -$OPTARG requires an argument"
-            usage;;
-        * ) # invalid long anrguments
-            echo "ERROR: Invalid option: --$opt"
-            usage;;
-   esac
+  else
+    opt="$option"
+  fi
+  case $opt in
+    h | help ) # Display Help
+      usage
+      ;;
+    noredo ) # Change REDO
+      REDO=0
+      ;;
+    common_beam ) # Compute common beam?
+      COMMONBEAM=1
+      ;;
+    full ) # Save images?
+      FULL=1
+      ;;
+    b | base ) # Base directory
+      BASE="$OPTARG"
+      if [[ $opt == "base" ]]; then
+        OPTIND=$((OPTIND+1))
+      fi
+      ;;
+    n | nproc ) # Number of processes for parallel
+      NPROC="$OPTARG"
+      if [[ $opt == "nproc" ]]; then
+        OPTIND=$((OPTIND+1))
+      fi
+      ;;
+    vv ) # Increase verbose level
+      VERBOSE=2
+      logger "Previous messages written to file"
+      ;;
+    \? ) # Incorrect option
+      echo "ERROR: Invalid option: -$OPTARG"
+      usage
+      ;;
+    : ) # Invalid argument
+      echo "ERROR: -$OPTARG requires an argument"
+      usage
+      ;;
+    * ) # Invalid long anrguments
+      echo "ERROR: Invalid option: --$opt"
+      usage
+      ;;
+  esac
 done
 shift $((OPTIND-1))
-CONFIG=$1
-logger "Configuration file: $CONFIG"
+config=$1
+logger "Configuration file: ${config}"
 shift
-UVDATA=$1
-logger "UV data: $UVDATA"
+uvdata=$1
+logger "UV data: ${uvdata}"
 
 # Environment setup
-CLEAN="${BASE}/clean"
 YCLEAN="${BASE}/yclean"
-CASA="python"
-MPICASA="mpirun -q -n $NPROC $CASA"
+MPICASA="$(which mpicasa) -n $NPROC $(which casa)"
 
 logger "DEBUG" "$(declare -p | grep "declare -- *")"
-source ${DIR}/functions.sh
-main
-echo "QMD"
+run_yclean "$uvdata" "$config"
+echo "YCLEAN has ended"

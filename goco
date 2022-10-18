@@ -6,24 +6,58 @@
 # channel identification and performs continuum subtraction to produce the     #
 # data products.                                                               #
 #                                                                              #
-# Change History                                                               #
-# 2019/01/16  Fernando Olguin   Initial version.                               #
-#             Patricio Sanhueza                                                #
-#                                                                              #
 ################################################################################
 ################################################################################
 ################################################################################
-
 # Bash options
-set -e
+set -eu
+
+# Environmental
+export MPICASA
+
+# Global constants
+readonly DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+readonly LOGS="logs"
+readonly -a STEPS=( "DIRTY" "AFOLI" "CONTSUB" "SPLIT" "YCLEAN" "PBCLEAN" )
+
+# Globals
+declare BASE="./"
+declare OPTSPEC=":hsn:b:-:"
+declare METHOD="max"
+declare XPOS=""
+declare YPOS=""
+declare -i REDO=1
+declare -i VERBOSE=1
+declare -i PUTRMS=0
+declare -i NSPW=4
+declare -i NEB=1
+declare -i NPROC=5
+# Default task triggers
+declare -i DODIRTY=1
+declare -i DOAFOLI=1
+declare -i DOCONTSUB=1
+declare -i DOSPLIT=1
+declare -i DOYCLEAN=1
+declare -i DOPBCLEAN=1
+# Others
+declare LOGGERFILE SRC0 SRC CONFIG DIRTY PLOTS UVDATA PBCLEAN CLEAN YCLEAN
+declare option
 
 ################################################################################
-# Usage                                                                        #
 ################################################################################
-function usage ()
-{
-    # Print usage and exit with error
-    cat <<fin
+# Functions                                                                    #
+################################################################################
+################################################################################
+# Import functions
+source ${DIR}/utils.sh
+source ${DIR}/functions.sh
+
+#######################################
+# Usage function.
+#######################################
+function usage() {
+  # Print usage and exit with error
+  cat <<fin
 Usage: goco [-h|--help] [-s|--silent] [--vv] [--steps] [-b|--base] [--noredo] [-n|--nproc]
     [--nspw N] [--skip STEP [STEP ...]] [--put_rms] [--pos x y] [--neb NEB] field
 
@@ -45,26 +79,29 @@ Options:
   --pos                 Position where to extract spectrum
   --max                 Use max to determine position of peak
 fin
-    exit 1
+  exit 1
 }
 
-################################################################################
-# Help                                                                         #
-################################################################################
-function Help()
-{
-    # Show instruction in README.md
-    less $DIR/README.md
-    exit
+#######################################
+# Open the help in readme file.
+# Globals:
+#   DIR
+#######################################
+function Help() {
+  # Show instructions in README.md
+  less ${DIR}/README.md
+  exit
 }
 
-################################################################################
-# List the available steps and exit                                            #
-################################################################################
+#######################################
+# List the available steps and exit.
+# Globals:
+#   STEPS
+#######################################
 function list_steps () 
 {
-    logger ${STEPS[@]}
-    exit
+  logger ${STEPS[@]}
+  exit
 }
 
 ################################################################################
@@ -153,12 +190,6 @@ function main ()
 {
     # Check that all the directories exist
     check_environment
-
-    # Put the rms in header
-    if [[ $PUTRMS -eq 1 ]]
-    then
-        rms_to_header ${DIRTY}/${SRC0}*.image
-    fi
     
     # Initial channel windows from peak
     local counter=1
@@ -240,130 +271,103 @@ function main ()
 # Main program                                                                 #
 ################################################################################
 ################################################################################
-
-##source /home/myso/share/binary_project/maat_venv/env/bin/activate
-# Initialize variables
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-BASE="./"
-OPTSPEC=":hsn:b:-:"
-REDO=1
-VERBOSE=1
-PUTRMS=0
-METHOD="max"
-XPOS=""
-YPOS=""
-NSPW=4
-NEB=1
-NPROC=5
-
-# Default task triggers
-STEPS=( "DIRTY" "AFOLI" "CONTSUB" "SPLIT" "YCLEAN" "PBCLEAN" )
-DODIRTY=1
-DOAFOLI=1
-DOCONTSUB=1
-DOSPLIT=1
-DOYCLEAN=1
-DOPBCLEAN=1
-
 # Setup logger
 # Initialize logger file
-LOGS="logs"
-if [[ ! -d $LOGS ]]
-then
-    mkdir $LOGS
+if [[ ! -d $LOGS ]]; then
+  mkdir $LOGS
 fi
-LOGGERFILE="$LOGS/goco_debug.log"
-
-# Source utils
-source $DIR/utils.sh
+LOGGERFILE="${LOGS}/goco_debug.log"
 logger "SEP" 1
 
-################################################################################
-# Process the input options. Add options as needed.                            #
-################################################################################
-# Get the options
+# Process the input options. Add options as needed.
 while getopts $OPTSPEC option; do
-    if [[ $option == "-" ]]
-    then
-        opt="$OPTARG"
-        if [[ ${!OPTIND} == -* ]] 
-        then
-            OPTARG=":"
-        else
-            OPTARG="${!OPTIND}"
-        fi
+  if [[ $option == "-" ]]; then
+    opt="$OPTARG"
+    if [[ ${!OPTIND} == -* ]]; then
+      OPTARG=":"
     else
-        opt="$option"
+      OPTARG="${!OPTIND}"
     fi
-    case $opt in
-        h | help ) # display Help
-            Help;;
-        s | silent ) # Decrease verbose level
-            VERBOSE=0;;
-        vv ) # Increase verbose level
-            VERBOSE=2
-            logger "Previous messages written to file";;
-        steps ) # Print steps and exit
-            list_steps;;
-        b | base ) # Base directory
-            BASE="$OPTARG"
-            if [[ $opt == "base" ]]
-            then
-                OPTIND=$((OPTIND+1))
-            fi;;
-        noredo ) # Change REDO
-            REDO=0;;
-        n | nproc ) # Number of processes for parallel
-            NPROC="$OPTARG"
-            if [[ $opt == "nproc" ]]
-            then
-                OPTIND=$((OPTIND+1))
-            fi;;
-        nspw ) # Number of spectral windows
-            NSPW=$OPTARG
-            logger "Number of spws: $NSPW"
-            OPTIND=$((OPTIND+1));;
-        skip ) # Skip given steps
-            update_triggers $OPTIND $@;;
-        put_rms ) # Put RMS in dirty images          
-            PUTRMS=1;;
-        pos ) # Give source position
-            METHOD="position"
-            XPOS=$OPTARG
-            OPTIND=$((OPTIND+1))
-            YPOS=${!OPTIND}
-            logger "DEBUG" "Setting position to $XPOS, $YPOS"
-            OPTIND=$((OPTIND+1));;
-        neb ) # Number of EBs
-            NEB=$OPTARG
-            logger "DEBUG" "Number of EBs: $NEB"
-            OPTIND=$((OPTIND+1));;
-        \? ) # incorrect option
-            echo "ERROR: Invalid option: -$OPTARG"
-            usage;;
-        : ) # invalid argument
-            echo "ERROR: -$OPTARG requires an argument"
-            usage;;
-        * ) # invalid long anrguments
-            echo "ERROR: Invalid option: --$opt"
-            usage;;
-   esac
+  else
+    opt="$option"
+  fi
+  case $opt in
+    h | help ) # display Help
+      Help
+      ;;
+    s | silent ) # Decrease verbose level
+      VERBOSE=0
+      ;;
+    vv ) # Increase verbose level
+      VERBOSE=2
+      logger "Previous messages written to file"
+      ;;
+    steps ) # Print steps and exit
+      list_steps
+      ;;
+    b | base ) # Base directory
+      BASE="$OPTARG"
+      if [[ $opt == "base" ]]; then
+        OPTIND=$((OPTIND+1))
+      fi
+      ;;
+    noredo ) # Change REDO
+      REDO=0
+      ;;
+    n | nproc ) # Number of processes for parallel
+      NPROC="$OPTARG"
+      if [[ $opt == "nproc" ]]; then
+        OPTIND=$((OPTIND+1))
+      fi
+      ;;
+    nspw ) # Number of spectral windows
+      NSPW=$OPTARG
+      logger "Number of spws: $NSPW"
+      OPTIND=$((OPTIND+1))
+      ;;
+    skip ) # Skip given steps
+      update_triggers $OPTIND $@
+      ;;
+    put_rms ) # Put RMS in dirty images          
+      PUTRMS=1
+      ;;
+    pos ) # Give source position
+      METHOD="position"
+      XPOS=$OPTARG
+      OPTIND=$((OPTIND+1))
+      YPOS=${!OPTIND}
+      logger "DEBUG" "Setting position to $XPOS, $YPOS"
+      OPTIND=$((OPTIND+1))
+      ;;
+    neb ) # Number of EBs
+      NEB=$OPTARG
+      logger "DEBUG" "Number of EBs: $NEB"
+      OPTIND=$((OPTIND+1))
+      ;;
+    \? ) # incorrect option
+      echo "ERROR: Invalid option: -$OPTARG"
+      usage
+      ;;
+    : ) # invalid argument
+      echo "ERROR: -$OPTARG requires an argument"
+      usage
+      ;;
+    * ) # invalid long anrguments
+      echo "ERROR: Invalid option: --$opt"
+      usage
+      ;;
+  esac
 done
 shift $((OPTIND-1))
 SRC0=$1
 logger "Source: $SRC0"
 
 # In case someone puts the field at the beginning
-if [[ $2 != "" ]] || [[ $SRC0 == "" ]]
-then
-    usage
+if [[ $2 != "" ]] || [[ $SRC0 == "" ]]; then
+  usage
 fi
 
 # Environment setup
-#if [[ $BASE != "" ]]
-#then
-#    BASE="${BASE}/"
-#fi
 SRC="${SRC0}"
 CONFIG="${BASE}/${SRC0}.cfg"
 DIRTY="${BASE}/dirty"
@@ -372,13 +376,8 @@ UVDATA="${BASE}/uvdata"
 PBCLEAN="${BASE}/pbclean"
 CLEAN="${BASE}/clean"
 YCLEAN="${BASE}/yclean"
-CASA="$(which casa)"
-MPICASA="$(which mpicasa) -n $NPROC $CASA"
-#CASA="/home/myso/opt/casa-release-5.6.0-60.el7/bin/casa"
-#MPICASA="/home/myso/opt/casa-release-5.6.0-60.el7/bin/mpicasa -n $NPROC $CASA"
+MPICASA="$(which mpicasa) -n $NPROC $(which casa)"
 
 logger "DEBUG" "$(declare -p | grep "declare -- *")"
-source ${DIR}/functions.sh
 main
-echo "QMD"
-#deactivate
+echo "GOCO has ended"
