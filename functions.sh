@@ -171,6 +171,8 @@ function run_pbclean ()
 #   LOGS
 #   COMMONBEAM
 #   FULL
+#   XPOS
+#   YPOS
 # Arguments:
 #   UV data
 #   Configuration file
@@ -178,8 +180,8 @@ function run_pbclean ()
 function run_yclean() {
   local script logfile old_val
   local -a flags
-  script="${DIR}/exec_yclean.py"
-  logfile="${LOGS}/casa_$(date --utc +%F_%H%M%S)_exec_yclean.log"
+  script="${DIR}/run_yclean.py"
+  logfile="${LOGS}/casa_$(date --utc +%F_%H%M%S)_run_yclean.log"
   flags=( "--logfile" "$logfile" "--nproc" "$NPROC" )
   #local cmd="$CASA $script ${flags[@]} $1 $CONFIG"
 
@@ -192,6 +194,10 @@ function run_yclean() {
   if [[ $FULL -eq 1 ]]; then
     flags+=( "--full" )
   fi
+
+  # Spectrum position
+  if [[ -v $XPOS ]] && [[ -v $YPOS ]]; then
+    flags+=( "--spec_at" "$XPOS" "$YPOS" )
     
   # Run by case
   if [[ $REDO -eq 1 ]] || [[ ! -d $YCLEAN ]]; then

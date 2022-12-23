@@ -8,13 +8,15 @@
 ################################################################################
 ################################################################################
 # Bash options
-set -e
+set -eu
 
 # Environmental
 export MPICASA
+export PYTHONPATH
 
 # Constants
 readonly DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+readonly PKGDIR="$( dirname $DIR )"
 readonly LOGS="logs"
 readonly LOGGERFILE="$LOGS/yclean_debug.log"
 readonly CASA="python3"
@@ -27,7 +29,7 @@ declare -i VERBOSE=1
 declare -i NPROC=5
 declare -i COMMONBEAM=0
 declare -i FULL=0
-declare YCLEAN uvdata config option
+declare XPOS YPOS YCLEAN uvdata config option
 
 ################################################################################
 ################################################################################
@@ -89,6 +91,13 @@ if [[ ! -d $LOGS ]]; then
 fi
 logger "SEP" 1
 
+# Check goco dir is in PYTHONPATH
+if [[ ":${PYTHONPATH}:" != *":${PKGDIR}:"* ]]; then
+  logger "Adding ${PKGDIR} to PYTHONPATH"
+  PYTHONPATH="${PKGDIR}:${PYTHONPATH}"
+fi
+
+
 # Process the input options. Add options as needed
 while getopts $OPTSPEC option; do
   if [[ $option == "-" ]]; then
@@ -130,6 +139,13 @@ while getopts $OPTSPEC option; do
       VERBOSE=2
       logger "Previous messages written to file"
       ;;
+    spec ) # Plot spectrum at this position
+      XPOS=$OPTARG
+      OPTIND=$((OPTIND+1))
+      YPOS=${!OPTIND}
+      logger "Spectrum position: $XPOS, $YPOS"
+      OPTIND=$((OPTIND+1))
+      ;;
     \? ) # Incorrect option
       echo "ERROR: Invalid option: -$OPTARG"
       usage
@@ -153,7 +169,9 @@ logger "UV data: ${uvdata}"
 
 # Environment setup
 YCLEAN="${BASE}/yclean"
-MPICASA="$(which mpicasa) -n $NPROC $(which casa)"
+if [[ ! -v MPICASA ]]; then
+  MPICASA="$(which mpicasa) -n $NPROC $(which casa)"
+fi
 
 logger "DEBUG" "$(declare -p | grep "declare -- *")"
 run_yclean "$uvdata" "$config"
