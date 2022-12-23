@@ -10,7 +10,7 @@ from casatasks import exportfits
 from casatools import image
 import numpy as np
 
-from go_continuum import argparse_proccess as args_proc
+from go_continuum import argparse_process as args_proc
 from go_continuum import argparse_parents as parents
 from go_continuum import utils
 try:
