@@ -76,14 +76,14 @@ def fill_window(chanranges: Sequence[str], **kwargs) -> List[Dict[str, Any]]:
     Each element of the list contains the information for each channel range.
     The are stored are:
 
-    - `basename`: base name to keep track of results.
-    - `name`: complete name.
-    - `freq`: rest frequency.
-    - `spw`: nominal spw value.
-    - `spw_val`: `spw` value for `tclean`.
-    - `width`: the `width` parameter for `tclean`.
-    - `start`: the `start` parameter for `tclean`.
-    - `nchan`: the `nchan` parameter for `tclean`.
+      - `basename`: base name to keep track of results.
+      - `name`: complete name.
+      - `freq`: rest frequency.
+      - `spw`: nominal spw value.
+      - `spw_val`: `spw` value for `tclean`.
+      - `width`: the `width` parameter for `tclean`.
+      - `start`: the `start` parameter for `tclean`.
+      - `nchan`: the `nchan` parameter for `tclean`.
 
     Args:
       chanranges: list with the channel ranges to split the spw.
@@ -186,7 +186,7 @@ def match_length(cfg: Config,
 
     # Double check
     if len(vals) != nmatch:
-        raise ValueError((f'Number of elements in option {option}'
+        raise ValueError((f'Number of elements in option {option} '
                           'does not match'))
 
     return vals
