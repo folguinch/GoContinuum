@@ -84,7 +84,7 @@ def prep_data(args: 'argparse.Namespace'):
             args.uvdata = []
         else:
             args.uvdata = [Path(x.strip()) for x in uvdata.split(',')]
-            args.log.info('UV data from config: %s' args.uvdata)
+            args.log.info('UV data from config: %s', args.uvdata)
     if len(args.uvdata) == 0:
         args.log.warning('UV data not found, will only run afoli')
         skip = ['dirty', 'applycal', 'contsub', 'split', 'yclean', 'pbclean']
