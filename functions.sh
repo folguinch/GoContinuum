@@ -198,6 +198,7 @@ function run_yclean() {
   # Spectrum position
   if [[ -v $XPOS ]] && [[ -v $YPOS ]]; then
     flags+=( "--spec_at" "$XPOS" "$YPOS" )
+  fi
     
   # Run by case
   if [[ $REDO -eq 1 ]] || [[ ! -d $YCLEAN ]]; then
