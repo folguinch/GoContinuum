@@ -4,6 +4,7 @@ from configparser import ConfigParser
 from pathlib import Path
 
 from .data_handler import DataHandler
+from .utils import get_spws_indices, get_tclean_params
 
 def set_casa_logging(args: 'argparse.Namespace') -> None:
     """Set casalog log file from argument parser object."""
