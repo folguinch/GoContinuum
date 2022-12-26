@@ -182,7 +182,8 @@ function run_yclean() {
   local -a flags
   script="${DIR}/run_yclean.py"
   logfile="${LOGS}/casa_$(date --utc +%F_%H%M%S)_run_yclean.log"
-  flags=( "--logfile" "$logfile" "--nproc" "$NPROC" )
+  #flags=( "--logfile" "$logfile" "--nproc" "$NPROC" )
+  flags=( "-v" "$logfile" "--nproc" "$NPROC" )
   #local cmd="$CASA $script ${flags[@]} $1 $CONFIG"
 
   # Common beam

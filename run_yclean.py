@@ -454,8 +454,7 @@ def run_yclean(args: List) -> None:
     config_defaults.update(tclean_defaults)
 
     # Pipe
-    pipe=[args_proc.set_casa_logging,
-          args_proc.set_config,
+    pipe=[args_proc.set_config,
           args_proc.get_tclean_params,
           _run_yclean,
     ]
