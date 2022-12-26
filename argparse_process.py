@@ -32,7 +32,7 @@ def set_config(args: 'argparse.Namespace'):
     # Update config value
     try:
         if args.section in configuration:
-            args.log('Setting section: %s', args.section)
+            args.log.info('Setting section: %s', args.section)
             args.config = configuration[args.section]
         else:
             raise cparser.NoSectionError(
@@ -40,13 +40,13 @@ def set_config(args: 'argparse.Namespace'):
             )
     except TypeError as exc:
         if args.section[0] in configuration:
-            args.log('Setting section: %s', args.section[0])
+            args.log.info('Setting section: %s', args.section[0])
             args.config = configuration[args.section[0]]
         else:
             raise cparser.NoSectionError(
                 f'Section {args.section[0]} does not exists') from exc
     except AttributeError:
-        args.log('No specific section requested')
+        args.log.info('No specific section requested')
 
 def get_data(args: 'argparse.Namespace') -> List[DataHandler]:
     """Get the data necessary for goco."""
