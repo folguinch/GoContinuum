@@ -62,7 +62,7 @@ from .argparse_actions import StartLogger
 #
 #    return parser
 
-def logger(filename: Optional[Path] = None,
+def logger(filename: Optional['pathlib.Path'] = None,
            use_casa: bool = False) -> argparse.ArgumentParser:
     """Parent parser to initiate a logging system.
 
