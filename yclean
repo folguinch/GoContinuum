@@ -174,5 +174,5 @@ if [[ ! -v MPICASA ]]; then
 fi
 
 logger "DEBUG" "$(declare -p | grep "declare -- *")"
-run_yclean "$uvdata" "$config"
+run_yclean "$config" "$uvdata" 
 echo "YCLEAN has ended"

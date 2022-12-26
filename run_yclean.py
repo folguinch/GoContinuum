@@ -476,10 +476,10 @@ def run_yclean(args: List) -> None:
     parser.add_argument('--spec_at', metavar=('XPOS', 'YPOS'), type=int,
                         nargs=2, default=None,
                         help='Store intermediate images and masks')
-    parser.add_argument('uvdata', nargs=1, type=str,
-                        help='uv data ms')
     parser.add_argument('configfile', nargs=1, action=actions.CheckFile,
                         help='Configuration file name')
+    parser.add_argument('uvdata', nargs=1, type=str,
+                        help='uv data ms')
     parser.set_defaults(
         tclean_params=None,
         config=config_defaults,
