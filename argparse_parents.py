@@ -7,7 +7,7 @@ import warnings
 from casatasks import casalog
 
 #from .functions import positions_to_pixels
-from .actions import StartLogger
+from .argparse_actions import StartLogger
 
 ## Typing
 #PosFunction = Callable[[argparse.Namespace], None]
