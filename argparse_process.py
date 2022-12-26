@@ -72,7 +72,7 @@ def set_tclean_params(args: 'argparse.Namespace'):
     # Get parameters
     tclean_pars = get_tclean_params(args.config)
     args.tclean_params = tclean_pars
-    args.log.post(f'tclean non-default parameters: {tclean_pars}')
+    args.log.info('tclean non-default parameters: %s', tclean_pars)
 
 def prep_data(args: 'argparse.Namespace'):
     """Prepare available data."""
