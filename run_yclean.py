@@ -316,7 +316,7 @@ def _run_yclean(args: NameSpace) -> None:
     # Resume?
     resume = args.resume
     if resume:
-        args.log.post('Resume turned on')
+        args.log.info('Resume turned on')
 
     # Source data
     if 'field' in args.config:
@@ -328,7 +328,7 @@ def _run_yclean(args: NameSpace) -> None:
     vis = Path(args.uvdata[0])
 
     # Spectral setup per channel window
-    wins = get_windows(vis, args.config, log=args.log.post)
+    wins = get_windows(vis, args.config, log=args.log.info)
 
     # Compute common beam?
     if 'joinchans' not in args.config:
@@ -342,8 +342,8 @@ def _run_yclean(args: NameSpace) -> None:
         name = win['name']
         directory = Path(args.basedir)
         directory = directory / 'yclean' /  f'{source}_{name}'
-        args.log.post('-' * 80)
-        args.log.post(f'Procesing {name}')
+        args.log.info('-' * 80)
+        args.log.info(f'Procesing {name}')
 
         # Some clean values
         restfreq = win['freq']
@@ -354,20 +354,20 @@ def _run_yclean(args: NameSpace) -> None:
         imagename = directory / f'auto{source}_{name}'
 
         # Log
-        args.log.post(f'vis = {vis}')
-        args.log.post(f'imagename = {imagename}')
-        args.log.post(f'Spectral window options: {win}')
+        args.log.info(f'vis = {vis}')
+        args.log.info(f'imagename = {imagename}')
+        args.log.info(f'Spectral window options: {win}')
 
         # Run
-        args.log.post('Running yclean')
+        args.log.info('Running yclean')
         if not resume and directory.is_dir():
-            args.log.post('Cleaning directories')
-            args.log.post(f'Deleting: {directory}')
+            args.log.info('Cleaning directories')
+            args.log.info(f'Deleting: {directory}')
             os.system(f'rm -rf {directory}')
         directory.mkdir(exist_ok=True, parents=True)
         finalimage, _ = yclean(vis, imagename, nproc=args.nproc[0],
                                common_beam=common_beam, resume=resume,
-                               full=args.full, log=args.log.post,
+                               full=args.full, log=args.log.info,
                                restfreq=restfreq, width=width,
                                start=start, nchan=nchan,
                                spectrum_at=args.spec_at,
@@ -408,20 +408,20 @@ def _join_cubes(args: NameSpace) -> None:
         # Check existance
         outputfits = output.with_suffix('.image.fits')
         if args.resume and outputfits.exists():
-            args.log.post(f'Skipping: {output}')
+            args.log.info(f'Skipping: {output}')
         elif outputfits.exists():
-            args.log.post(f'Overwriting: {output}')
+            args.log.info(f'Overwriting: {output}')
             os.system(f'rm -rf {output} {outputfits}')
 
         # Concatenate
         if len(val) == 1:
-            args.log.post(f'Copying cube: {val}')
+            args.log.info(f'Copying cube: {val}')
             os.system(f'rsync -auvr {val[0]} {output}')
         else:
-            args.log.post(f'Joining cubes: {val}')
+            args.log.info(f'Joining cubes: {val}')
             join_cubes(val, output,
                        split_option(args.config, 'joinchans'),
-                       resume=args.resume, log=args.log.post)
+                       resume=args.resume, log=args.log.info)
 
 def run_yclean(args: List) -> None:
     """Program main.
@@ -461,7 +461,8 @@ def run_yclean(args: List) -> None:
     ]
 
     # Command line options
-    parser = argparse.ArgumentParser(parents=[parents.logger(use_casa=True)])
+    args_parents = [parents.logger('debug_yclean.log')]
+    parser = argparse.ArgumentParser(parents=args_parents)
     parser.add_argument('--basedir', default='', type=str,
                         help='Base directory')
     parser.add_argument('--nproc', nargs=1, type=int, default=[5],
