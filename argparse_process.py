@@ -58,7 +58,7 @@ def get_data(args: 'argparse.Namespace') -> List[DataHandler]:
             raise IOError(f'Cannot find uvdata: {uv}')
         eb = None if len(uvdata) == 0 else i+1
         info = DataHandler(name=uv.stem, uvdata=uv, eb=eb,
-                           spws=utils.get_spws_indices(uv, log=args.log.info))
+                           spws=get_spws_indices(uv, log=args.log.info))
         args.log.info('Found spectral windows: %s', info['spws'])
         uvdata.append(info)
 
@@ -70,7 +70,7 @@ def get_tclean_params(args: 'argparse.Namespace'):
     It assumes that `tclean_params` and `config` arguments exist in the parser.
     """
     # Get parameters
-    tclean_pars = utils.get_tclean_params(args.config)
+    tclean_pars = get_tclean_params(args.config)
     args.tclean_params = tclean_pars
     args.log.post(f'tclean non-default parameters: {tclean_pars}')
 
