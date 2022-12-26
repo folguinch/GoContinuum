@@ -31,17 +31,17 @@ def set_config(args: 'argparse.Namespace'):
 
     # Update config value
     try:
-        if args.section in configuration:
+        if args.section in args.config:
             args.log.info('Setting section: %s', args.section)
-            args.config = configuration[args.section]
+            args.config = args.config[args.section]
         else:
             raise cparser.NoSectionError(
                 f'Section {args.section} does not exists'
             )
     except TypeError as exc:
-        if args.section[0] in configuration:
+        if args.section[0] in args.config:
             args.log.info('Setting section: %s', args.section[0])
-            args.config = configuration[args.section[0]]
+            args.config = args.config[args.section[0]]
         else:
             raise cparser.NoSectionError(
                 f'Section {args.section[0]} does not exists') from exc
