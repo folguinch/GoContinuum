@@ -455,7 +455,7 @@ def run_yclean(args: List) -> None:
 
     # Pipe
     pipe=[args_proc.set_config,
-          args_proc.get_tclean_params,
+          args_proc.set_tclean_params,
           _run_yclean,
     ]
 
