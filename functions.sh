@@ -197,7 +197,7 @@ function run_yclean() {
   fi
 
   # Spectrum position
-  if [[ -v $XPOS ]] && [[ -v $YPOS ]]; then
+  if [[ -v XPOS ]] && [[ -v YPOS ]]; then
     flags+=( "--spec_at" "$XPOS" "$YPOS" )
   fi
     
