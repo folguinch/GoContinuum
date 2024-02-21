@@ -1,6 +1,4 @@
-#!/bin/python
 import argparse
-import os
 import sys
 
 from astropy.io import fits
@@ -8,13 +6,13 @@ from astropy.stats import sigma_clip
 import astropy.units as u
 from astropy.wcs import WCS
 import matplotlib.pyplot as plt
-from myutils.argparse_actions import LoadFITS
-from myutils.logger import get_logger
 import numpy as np
 from scipy.ndimage.filters import maximum_filter
 from scipy.ndimage.morphology import binary_dilation
 from scipy.stats import linregress
 
+from myutils.argparse_actions import LoadFITS
+from myutils.logger import get_logger
 # Optional
 try:
     from astroSource.source import LoadSourcefromConfig
@@ -38,80 +36,93 @@ def new_fits(data, hdr=None, filename=None):
 
     return hdul[0]
 
-def sum_collapse(cube, rms=None, filename=None):
-    return _sum_collapse(cube, rms=rms, filename=filename)[0]
+def sum_collapse(cube: npt.ArrayLike,
+                 rms: Optional[float] = None,
+                 nsigma: float = 1.,
+                 edge: int = 10,
+                 log: Callable = print) -> npt.ArrayLike:
+    """Collapse cube along the spectral axis.
 
-def _sum_collapse(cube, rms=None, filename=None, get_cubes=False):
+    If `rms` is given, then all values over `nsigma*rms` are summed.
+
+    Args:
+      cube: cube array.
+      rms: optional; the cube noise level.
+      nsigma: optional; noise level to filter data.
+      edge: optional; border channels to ignore.
+      log: optional; logging function.
+    """
     if rms is not None:
-        logger.info('Summing all values over: %f', rms)
-        masked = np.ma.masked_less(cube.data[0,10:-10,:,:], rms)
-        imgsum = np.sum(masked, axis=0).data/cube.data.shape[1]
+        log(f'Summing all values over: {nsigma * rms}')
+        masked = np.ma.masked_less(cube[edge:-edge, :, :], nsigma * rms)
+        imgsum = np.ma.sum(masked, axis=0)
     else:
-        logger.info('Summing along spectral axis')
-        imgsum = func(cube.data[0,10:-10,:,:], axis=0)/cube.data.shape[1]
+        log('Summing along spectral axis')
+        imgsum = np.sum(cube[edge:-edge, :, :], axis=0)
 
-    # Header
-    wcs = WCS(cube.header).sub(['longitude', 'latitude'])
-    header = wcs.to_header()
-    
-    if get_cubes:
-        return (new_fits(imgsum, hdr=header, filename=filename), [cube])
-    else:
-        return (new_fits(imgsum, hdr=header, filename=filename),)
+    return imgsum
 
-def max_collapse(cubelist, rms=None, filename=None):
-    return _max_collapse(cubelist, rms=rms, filename=filename, get_cubes=False)[0]
+def max_collapse(cube: npt.ArrayLike,
+                 rms: Optional[float] = None,
+                 nsigma: float = 1.,
+                 edge: int = 10,
+                 log: Callable: print) -> npt.ArrayLike:
+    """Collapse cube along the spectral axis using `max` function.
 
-def _max_collapse(cubelist, rms=None, filename=None, get_cubes=True):
-    # Find max map
-    cummax = None
-    cubes = []
-    for cfile in cubelist:
-        # Load cube
-        logger.info('Finding max image for: %s', os.path.basename(cfile))
-        cube = fits.open(os.path.expanduser(cfile))[0]
-        if get_cubes:
-            cubes += [cube]
+    If `rms` is given, then all values below `nsigma*rms` are set to zero.
 
-        # Find max image
-        aux = np.max(cube.data[0,10:-10,:,:], axis=0)
-
-        # Update cumulative max
-        if cummax is None:
-            cummax = aux
-        else:
-            cummax = np.max(np.array([cummax, aux]), axis=0)
-            assert cummax.shape == aux.shape
+    Args:
+      cubename: cube filename.
+      rms: optional; the cube noise level.
+      nsigma: optional; noise level to filter data.
+      edge: optional; border channels to ignore.
+      log: optional; logging function.
+    """
+    # Load cube
+    imgmax = np.max(cube[edge:-edge,:,:], axis=0)
 
     # Replace values below rms
     if rms is not None:
-        logger.info('Replacing values below %f by zero', rms)
-        cummax[cummax<rms] = 0.
-    else:
-        pass
+        log('Replacing values below %f by zero', nsigma * rms)
+        imgmax[imgmax < rms] = 0.
 
-    # Header
-    wcs = WCS(cube.header).sub(['longitude', 'latitude'])
-    header = wcs.to_header()
+    return imgmax
 
-    if get_cubes:
-        return (new_fits(cummax, hdr=header, filename=filename), cubes)
-    else:
-        return (new_fits(cummax, hdr=header, filename=filename),)
+def find_peak(image: Optional[npt.ArrayLike] = None,
+              cube: Optional[u.Quantity] = None,
+              rms: Optional[u.Quantity] = None,
+              collapse_func: Callable = max_collapse,
+              diff: Optional[Sequence[npt.ArrayLike]] = None
+              log: Callable = print,
+              **kwargs) -> Tuple[npt.ArrayLike, int, int]:
+    """Find an emission peak.
 
-def find_peak(cube=None, image=None, filename=None, rms=None, diff=None,
-        func=sum_collapse):
-    # Find peak
+    If `image` is given, then the position of the maximum is given. Else,
+    if `cube` is given, then it is collapsed along the spectral axis using the
+    `collapse_func`, and the location of the maximum is returned. Otherwise
+    `ValueError` is raised.
+
+    Args:
+      image: 2-D image.
+      cube: data cube.
+      rms: optional; cube noise level.
+      collapse_func: optional; collapse function.
+      diff: optional; differentials of the image along each axis.
+      log: optional; logging function.
+      kwargs: additional arguments to `collapse_func`
+    """
+    # Collapsed image
     if image is not None:
-        logger.info('Looking for peak in input image')
-        imgsum = image.data
+        log('Looking peak of input image')
+        collapsed = image
     elif cube is not None:
-        logger.info('Looking for peak in input cube')
-        imgsum = func(cube, rms=rms, filename=filename)
-        imgsum = imgsum.data
+        log('Looking peak of collapsed cube')
+        collapsed = collapse_func(cube.value, rms=rms.to(cube.unit).value,
+                                  log=log, **kwargs)
 
+    # Find peak
     if diff is None:
-        ymax, xmax = np.unravel_index(np.nanargmax(imgsum), imgsum.shape)
+        ymax, xmax = np.unravel_index(np.nanargmax(collapsed), collapsed.shape)
     else:
         # Search for peaks
         xmax = np.diff((diff[1] > 0).view(np.int8), axis=1)
@@ -122,20 +133,19 @@ def find_peak(cube=None, image=None, filename=None, rms=None, diff=None,
         indyy = indyy + 1
 
         # Select the one with the highest value
-        vals = imgsum[indxy, indxx]
+        vals = collapsed[indxy, indxx]
         ind = np.argsort(imgsum[indxy, indxx])[::-1]
         indxy = indxy[ind]
         indxx = indxx[ind]
         for p in zip(indxx, indxy):
             if p in zip(indyx, indyy):
-                if rms and imgsum[p[1],p[0]]<=rms:
+                if (rms is not None and
+                    collapsed[p[1], p[0]] <= rms.to(cube.unit).value):
                     continue
                 xmax, ymax = p
                 break
     
-    logger.info('Peak position: %i, %i', xmax, ymax) 
-
-    return xmax, ymax 
+    return collapsed, xmax, ymax 
 
 def mask_image(img, x, y, r):
     Y, X = np.indices(img.data.shape)
@@ -152,10 +162,7 @@ def get_diff(img):
     diffs = [np.diff(newd, axis=i) for i in range(2)]
     return diffs
 
-def empty(args):
-    pass
-
-def prep(args):
+def load_data(filenames: Sequence['pathlib.Path']) -> :
     # Get image
     if args.image is None:
         args.image, args.cubes = args.collapse(args.cube, rms=args.rms[0],
@@ -165,6 +172,117 @@ def prep(args):
 
     # Changes in values
     args.diff = get_diff(args.image)
+
+def get_spectrum(cube_file: Optional['pathlib.Path'] = None,
+                 spec_file: Optional['pathlib.Path'] = None,
+                 position: Tuple[int] = None,
+                 rms: Optional[u.Quantity] = None,
+                 beam_avg: bool = False,
+                 beam_fwhm: Optional[u.Quantity] = None,
+                 beam_size: Optional[u.Quantity] = None,
+                 redo_collapse: bool = False,
+                 log: Callable = print) -> Tuple[npt.ArrayLike, Tuple[int]]:
+    """Load spectrum.
+
+    At least one `cube_file` or `spec_file` must be specified. The file
+    `cube_file` has priority.
+    
+    Args:
+      cube_file: cube file name.
+      spec_file: spectrum file.
+      position: optional; position where to extract the spectrum from.
+      rms: optional; noise level of the cube.
+      beam_avg: optional; use a beam average?
+      beam_fwhm: optional; beam FWHM of the data.
+      beam_size: optional; beam size (sigma) of the data.
+      redo_collapse: optional; recalculate collapsed image?
+      log: optional; logging function.
+
+    Returns:
+      An array with the spectrum.
+      A tuple with `(x,y)` coordinates of the spectrum position.
+    """
+    if cube_file is not None:
+        # Check for collapsed image
+        collapsed_file = cube_file.with_suffix('.collapsed.fits')
+        if collapsed_file.is_file():
+            collapsed = fits.open(collapsed_file)[0]
+            collapsed = np.squeeze(collapsed.data)
+        else:
+            collapsed = None
+
+        # Load cube
+        cube = fits.open(cube_file)[0]
+        header = cube.header
+        wcs = WCS(header, naxis=2)
+
+        # Remove dummy axes
+        cube = np.squeeze(cube.data) * u.Unit(header['BUNIT'])
+        log('Cube shape: %s', cube.shape)
+
+        # Find peak
+        if position is not None:
+            # User value
+            xmax, ymax = position
+            log(f'Using input reference position: {xmax} {ymax}')
+        else:
+            # Peak value
+            collapsed, xmax, ymax = find_peak(image=collapsed, cube=cube,
+                                              rms=rms)
+            log(f'Using peak position: {xmax} {ymax}')
+
+            # Save collapsed image
+
+        # Get spectrum at position
+        if beam_avg:
+            # Beam size
+            log('Averaging over beam')
+            pixsize = np.sqrt(wcs.proj_plane_pixel_area())
+            if args.beam_fwhm is not None:
+                beam_fwhm =gaussian_fwhm_to_sigma * args.beam_fwhm
+            else:
+                beam_fwhm = np.sqrt(header['BMIN'] * header['BMAJ'])
+            if beam_size is not None:
+                beam_sigma = beam_size
+            else:
+                beam_sigma = gaussian_fwhm_to_sigma * beam_fwhm
+            beam_sigma = beam_sigma / pixsize.to(beam_sigma.unit)
+            args.log.info('Beam size (sigma) = %f pix', beam_sigma)
+
+            # Filter data
+            Y, X = np.indices(cube.shape[-2:])
+            dist = np.sqrt((X - xmax)**2. + (Y - ymax)**2.)
+            mask = dist > beam_sigma
+            masked = np.ma.array(cube.value,
+                                 mask=np.tile(mask, (cube.shape[0], 1)))
+            spectrum = np.ma.sum(masked, axis=(1, 2)) / np.sum(~mask)
+        else:
+            log('Using single pixel spectrum')
+            spectrum = cube[:, ymax, xmax].value
+        log(f'Number of channels: {spectrum.size}')
+
+        # Save to file
+        if spec_file is None:
+            spec_file = cube_file.with_suffix(f'.x{xmax}_y{ymax}.spec.dat')
+        with spec_file.open('w') as out:
+            lines = ['%f %f' % fnu for fnu in enumerate(args.spectrum)]
+            out.write('\n'.join(lines))
+
+    elif spec_file is not None and spec_file.is_file():
+        # Load from file
+        spectrum = np.loadtxt(spec_file, dtype=float)
+        log(f'Spectrum shape: {spectrum.shape}')
+        if spectrum.ndim > 1:
+            log('Selecting second column')
+            spectrum = spectrum[:, 1]
+        else:
+            spectrum = spectrum
+
+        xmax = ymax = '--'
+    else:
+        raise ValueError('Cannot find a valid spectrum')
+
+    return spectrum, (xmax, ymax)
 
 def extract_spectra(args):
     for i in range(args.niter):
@@ -241,75 +359,3 @@ def extract_source_spec(args):
 
         # Save spectrum
         save_struct_array(file_name, comb, units, fmt='%10i\t%10.4f\t%10.4e')
-
-def main():
-    # Command line options
-    parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers()
-    parser.add_argument('--niter', default=2, type=int,
-            help='Number of iterations/peaks')
-    parser.add_argument('--plotname', default=None,
-            help='Plot file name base (without extension)')
-    parser.add_argument('--rms', nargs=1, type=float, default=[None],
-            help='Image rms')
-    parser.add_argument('--image_file', type=str, 
-            help='file name for the collapsed image')
-    parser.add_argument('--image', action=LoadFITS, default=None,
-            help='File name of image to look for peaks')
-    parser.add_argument('--beam_avg', action='store_true', 
-            help='Compute a beam average spectrum')
-    group1 = parser.add_mutually_exclusive_group(required=False)
-    group1.add_argument('--beam_size', nargs=1, type=float,
-            help='Beam size (sigma) in arcsec')
-    group1.add_argument('--beam_fwhm', nargs=1, type=float,
-            help='Beam FWHM in arcsec')
-    group1.add_argument('--radius', nargs=1, type=float,
-            help='Mask radius in arcsec')
-    parser.set_defaults(diff=None, cubes=None)
-    # Subparsers
-    # Max
-    pmax = subparsers.add_parser('max', 
-            help="Use max of all input images")
-    pmax.add_argument('--pos_file', nargs=1, type=str, default=[None],
-            help='Position file')
-    pmax.add_argument('specname', default=None, nargs=1,
-            help='Spectrum file name base (without extension). ' + \
-                    'If more than one cube include a \%i for the spectra of ' + \
-                    'each cube.')
-    pmax.add_argument('cube', nargs='*', default=None,
-            help='Data cubes file names')
-    pmax.set_defaults(main=extract_spectra, prep=prep, collapse=_max_collapse)
-    # Sum
-    psum = subparsers.add_parser('sum', 
-            help="Use sum of input image")
-    psum.add_argument('specname', default=None, nargs=1,
-            help='Spectrum file name base (without extension)')
-    psum.add_argument('cube', action=LoadFITS, default=None,
-            help='Data cube file name')
-    psum.set_defaults(main=extract_spectra, prep=prep, collapse=_sum_collapse)
-    # Positions
-    ppos = subparsers.add_parser('position',
-            help = 'Extract the spectra from the given positions')
-    ppos.add_argument('cube', action=LoadFITS, default=None,
-            help='Data cube file name')
-    ppos.add_argument('specname', default=None, nargs=1,
-            help='Spectrum file name base (without extension)')
-    ppos.add_argument('locations',  nargs='*', type=int,
-            help='List of positions')
-    ppos.set_defaults(prep=empty, main=extract_from_positions)
-    # Source
-    if LoadSourcefromConfig is not None:
-        psrc = subparsers.add_parser('source',
-                help='Extract spectra at source position')
-        psrc.add_argument('--keys', nargs=1, type=str, default=['all'],
-                help='Data keys to load')
-        psrc.add_argument('src', metavar='SOURCE',
-                action=LoadSourcefromConfig,
-                help='Source configuration file')
-        psrc.set_defaults(prep=empty, main=extract_source_spec)
-    args = parser.parse_args()
-    args.prep(args)
-    args.main(args)
-
-if __name__=='__main__':
-    main()

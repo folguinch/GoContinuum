@@ -1,9 +1,12 @@
 """Utilities for working with CASA."""
-from typing import Optional, Sequence, List, TypeVar, Callable, Mapping, Any
+from typing import (Optional, Sequence, List, TypeVar, Callable, Mapping, Any,
+                    Tuple, Dict)
 from inspect import signature
 from collections import OrderedDict
 
-from casatasks import vishead, tclean
+import astropy.units as u
+import numpy.typling as npt
+from casatasks import vishead
 
 from .common_types import SectionProxy
 
@@ -52,53 +55,68 @@ def get_spws_indices(vis: 'pathlib.Path',
 
     return [spw for i, spw in enumerate(spwinfo.values()) if i in spw_ind]
 
-def check_tclean_params(config: SectionProxy,
-                        required: Sequence[str] = ('cell', 'imsize')) -> None:
-    """Check required config params."""
+def iter_data(data: Sequence['data_handler.DataHandler']):
+    """Generator to iterate over data and their spws properties."""
+    for ebdata in data:
+        for spw, stem in ebdata.spw_stems.items():
+            yield ebdata, spw, stem
+
+def get_func_params(func: Callable,
+                    config: SectionProxy,
+                    required_keys: Sequence[str] = (),
+                    ignore_keys: Sequence[str] = (),
+                    float_keys: Sequence[str] = (),
+                    int_keys: Sequence[str] = (),
+                    bool_keys: Sequence[str] = (),
+                    int_list_keys: Sequence[str] = (),
+                    float_list_keys: Sequence[str] = (),
+                    sep: str = ',',
+                    cfgvars: Optional[Dict] = None,
+                    ) -> Dict:
+    """Check the input parameters of a function and convert.
+    
+    Args:
+      func: function to inspect.
+      config: configuration parser section proxy.
+      required_keys: optional; required keys.
+      ignore_keys: optional; keys to ignore.
+      float_keys: optional; keys required as float type.
+      int_keys: optional; keys required as int type.
+      bool_keys: optional; keys required as bool type.
+      int_list_keys: optional; keys required as list of integers.
+      float_list_keys: optional; keys required as list of floats.
+      sep: optional; separator for the values in list keys.
+      cfgvars: optional; values replacing those in config.
+    """
+    # Default values
+    if cfgvars is None:
+        cfgvars = dict()
+
     # Check required arguments are in config
     for opt in required:
-        if opt not in config:
+        if opt not in config or opt not in cfgvars:
             raise KeyError(f'Missing {opt} in configuration')
 
-def get_tclean_params(
-    config: SectionProxy,
-    ignore_keys: Sequence[str] = ('vis', 'imagename', 'spw'),
-    float_keys: Sequence[str]  = ('robust', 'pblimit', 'pbmask'),
-    int_keys: Sequence[str] = ('niter', 'chanchunks'),
-    bool_keys: Sequence[str] = ('interactive', 'parallel', 'pbcor',
-                                'perchanweightdensity'),
-) -> dict:
-    """Filter input parameters and convert values to the correct type.
-
-    Args:
-      config: `ConfigParser` section proxy with input parameters to filter.
-      ignore_keys: optional; tclean parameters to ignore.
-      float_keys: optional; tclean parameters to convert to float.
-      int_keys: optional; tclean parameters to convert to int.
-      bool_keys: optional; tclean parameters to convert to bool.
-    """
-    # Check required parameters
-    check_tclean_params(config)
-
-    # Get paramters
-    tclean_pars = {}
-    for key in signature(tclean).parameters:
-        if key not in config or key in ignore_keys:
+    # Filter paramters
+    pars = {}
+    for key in signature(func).parameters:
+        if (key not in config and key not in cfgvars) or key in ignore_keys:
             continue
         #Check for type:
         if key in float_keys:
-            tclean_pars[key] = config.getfloat(key)
+            pars[key] = config.getfloat(key, vars=cfgvars)
         elif key in int_keys:
-            tclean_pars[key] = config.getint(key)
+            pars[key] = config.getint(key, vars=cfgvars)
         elif key in bool_keys:
-            tclean_pars[key] = config.getboolean(key)
-        elif key == 'imsize':
-            tclean_pars[key] = list(map(int, config.get(key).split()))
-            if len(tclean_pars[key]) == 1:
-                tclean_pars[key] = tclean_pars[key] * 2
-        elif key == 'scales':
-            tclean_pars[key] = list(map(int, config.get(key).split(',')))
+            pars[key] = config.getboolean(key, vars=cfgvars)
         else:
-            tclean_pars[key] = config.get(key)
+            val = config.get(key, vars=cfgvars)
+            if key in int_list_keys:
+                pars[key] = list(map(int, val.split(sep)))
+            elif key in float_list_keys:
+                pars[key] = list(map(float, val.split(sep)))
+            else:
+                pars[key] = config.get(val)
 
-    return tclean_pars
+    return pars
+

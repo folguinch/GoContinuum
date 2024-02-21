@@ -337,72 +337,9 @@ class ReadSkyCoords(argparse.Action):
         setattr(namespace, self.dest, vals)
 
 # Path actions
-class NormalizePath(argparse.Action):
-    """Normalizes a path or filename."""
-
-    def __call__(self, parser, namespace, values, option_string=None):
-        values = validate_paths(values)
-        setattr(namespace, self.dest, values)
-
 class MakePath(argparse.Action):
     """Check and create directory if needed."""
 
     def __call__(self, parser, namespace, values, option_string=None):
         values = validate_paths(values, mkdir=True)
         setattr(namespace, self.dest, values)
-
-class CheckFile(argparse.Action):
-    """Validates files and check if they exist."""
-
-    def __call__(self, parser, namespace, values, option_string=None):
-        values = validate_paths(values, check_is_file=True)
-        setattr(namespace, self.dest, values)
-
-# Logger actions
-class StartLogger(argparse.Action):
-    """Create a logger.
-
-    If nargs=? (default), log to default or const if provided and flag used
-    else log only to stdout.
-    For verbose levels, the standard option_string values are:
-      -v, --vv, --vvv, --log, --info, --debug, --fulldebug
-    With: -v = --log = --info
-          --vv = --debug
-          --vvv = --fulldebug
-    Other values will create a normal logger.
-    """
-
-    def __init__(self, option_strings, dest, nargs='?', metavar='LOGFILE',
-                 const=None, default=None, **kwargs):
-        # Cases from nargs
-        if nargs not in ['?']:
-            raise ValueError('nargs value not allowed')
-
-        # Default dest and default log file
-        dest = 'log'
-        self._logfile = const or default
-
-        # Set default to stdout
-        const = None
-        default = get_stdout_logger('__main__', verbose='v')
-
-        super().__init__(option_strings, dest, nargs=nargs, metavar=metavar,
-                         const=const, default=default, **kwargs)
-
-    def __call__(self, parser, namespace, value, option_string=None):
-        if value is None:
-            value = self._logfile
-
-        # Determine verbose
-        if option_string in ['-v', '--log', '--info']:
-            verbose = 'v'
-        elif option_string in ['--vv', '--debug']:
-            verbose = 'vv'
-        elif option_string in ['--vvv', '--fulldebug']:
-            verbose = 'vvv'
-        else:
-            verbose = None
-
-        logger = update_logger(self.default, filename=value, verbose=verbose)
-        setattr(namespace, self.dest, logger)
-
