@@ -27,19 +27,24 @@ def _prep_steps(args: argparse.Namespace):
 
 def _get_data_manager(args: 'argparse.Namespace') -> None:
     """Generate a data manager."""
-    environ = GoCoEnviron(basedir=args.base)
+    environ = GoCoEnviron(basedir=args.base, check_env=True)
     args.manager = DataManager(args.configfile[0], environ=environ,
                                log=args.log)
 
 def _goco_pipe(args: 'argparse.Namespace') -> None:
     """Run the GoCo pipeline."""
     # Concatenate data
+    args.log.info('Starting GoCo pipe')
     args.manager.concat_data()
 
     # Dirty images
     if args.steps['dirty']:
-        dirty_images = args.manager.get_imagenames('dirty')
+        args.log.info('*' * 15)
+        args.log.info('Dirty images:')
+        args.log.info('*' * 15)
+        dirty_images = args.manager.get_imagenames('dirty', fits=False)
         for spw, image in enumerate(dirty_images):
+            args.log.info('-' * 15)
             if args.resume and image.exists():
                 args.log.info('Skipping dirty for spw%i', spw)
                 continue
@@ -47,21 +52,32 @@ def _goco_pipe(args: 'argparse.Namespace') -> None:
                 target = image.with_suffix('.*')
                 args.log.warning('Deleting dirty: %s', target)
                 os.system(f'rm -rf {target}')
-            args.manager.clean_cube('dirty', spw)
+            args.log.info('Calculating dirty for spw%s', spw)
+            args.manager.clean_cube('dirty', spw, nproc=args.nproc[0])
 
     # AFOLI
     if args.steps['afoli']:
+        args.log.info('*' * 15)
+        args.log.info('AFOLI:')
+        args.log.info('*' * 15)
         args.manager.afoli(resume=args.resume)
 
     # Continuum
     if args.steps['continuum']:
+        args.log.info('*' * 15)
+        args.log.info('Continuum visibilities:')
+        args.log.info('*' * 15)
         args.manager.get_continuum_vis(pbclean=args.steps['pbclean'],
                                        nproc=args.nproc[0],
                                        resume=args.resume)
 
     # Contsub
     if args.steps['contsub']:
-        args.manager.get_contsub_vis()
+        args.log.info('*' * 15)
+        args.log.info('Contsub visibilities:')
+        args.log.info('*' * 15)
+        args.manager.get_contsub_vis(resume=args.resume)
+    args.log.info('GoCo pipe finished, bye bye!')
 
 def goco(args: Optional[Sequence] = None) -> None:
     """GoContinuum main program.
@@ -92,13 +108,13 @@ def goco(args: Optional[Sequence] = None) -> None:
     )
     parser.add_argument('-l', '--list_steps', action='store_true',
                         help='List available steps')
-    parser.add_argument('--resume', dest='redo', action='store_true',
+    parser.add_argument('--resume', action='store_true',
                         help='Resume unfinished steps')
     parser.add_argument('-b', '--base',
                         action=actions.NormalizePath,
                         default=Path('./'),
                         help='Base directory')
-    parser.add_argument('-n', '--nproc', type=int, nargs=1,
+    parser.add_argument('-n', '--nproc', type=int, nargs=1, default=[5],
                         help='Number of processes for parallel steps')
     parser.add_argument('--skip', nargs='+', choices=list(steps.keys()),
                         help='Skip these steps')
@@ -116,12 +132,14 @@ def goco(args: Optional[Sequence] = None) -> None:
 
     # Read and process
     if args is None:
-        args = parser.parse_args(args)
+        args = sys.argv[1:]
+    args = parser.parse_args(args)
     if args.list_steps:
         args.log('Available steps: %s', list(steps.keys()))
         sys.exit(0)
     for step in pipe:
         step(args)
+        args.log.info('=' * 80)
 
 if __name__ == '__main__':
     goco(sys.argv[1:])
