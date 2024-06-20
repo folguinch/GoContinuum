@@ -1,7 +1,44 @@
-"""Functions to run and implement AFOLI."""
+"""Functions to run and implement AFOLI.
+
+AFOLI finds line-free channels from a given spectrum. To find these channels it
+uses sigma clip to mask channels with lines. As default, the sigma clip is
+assymetric in order to favor the identification of emission lines. This is,
+however, customizable from the `afoli` function input.
+
+For `GoContinuum`, where a configuration file is needed, the function
+`afoli_iter_data` can use the configuration file to specify the parameters of
+the `afoli` function. It also performs the following tasks (some optional
+depending on the function input):
+
+    1. Find the coordinate of where the spectra will be subtracted.
+    2. Extract the spectrum for each SPW.
+    3. Run AFOLI on the spectrum.
+    4. Converts and saves the masked spectrum to frequency range flags.
+    5. Join all the flags into one file.
+
+The different parameters used for the masking in AFOLI allow more flexibility
+in the line-free channel selection. The general procedure of AFOLI is:
+
+    1. Generates a masked spectrum with a mask containing: the edges of the
+    spectrum (`extremes` parameter), requested flagged channels (`flagchans`),
+    and invalid values (`invalid_values`).
+    2. Runs sigma-clip un the spectrum to filter out line emission/absorption
+    (`sigma`, `censtat` and `niter` parameters).
+    3. It dilates the mask by requested amount (`dilate`).
+    4. Removes masked section below a minimum width (`min_width`).
+    5. Masks small gaps between masked sections (`min_gap`).
+    6. Saves statistics to a table if requested.
+    7. Retrieve the masking levels by changing the number of iterations for
+    sigma-clipping
+    8. Finds and saves the masked channel ranges in CASA format.
+    9. Plots the spectrum and step statistics.
+    10. If requested, it writes channel range files for different levels
+    factors of the real continuum from sigma-clip.
+"""
 from typing import (List, Optional, Sequence, Callable, Tuple, Union, TextIO,
                     Any, Dict)
 
+from astropy.coordinates import SkyCoord
 from astropy.stats import sigma_clip
 from goco_helpers.image_tools import get_common_position, get_spectrum
 from goco_helpers.utils import get_func_params
@@ -19,8 +56,6 @@ from .common_types import SectionProxy
 
 def group_chans(array: npt.ArrayLike) -> List[slice]:
     """Group contiguous channels from masked array."""
-    # https://stackoverflow.com/questions/7352684/how-to-find-the-groups-of-consecutive-elements-from-an-array-in-numpy
-    #return np.split(inds, np.where(np.diff(inds) != 1)[0]+1)
     return np.ma.clump_masked(array)
 
 def chans_to_casa(chan_slices: Sequence[slice], sep: str = ';') -> str:
@@ -50,8 +85,22 @@ def write_casa_freqs(freq_ranges: List[Tuple],
     """Write flagged frequency ranges to CASA format."""
     filename.write_text(freqs_to_casa(freq_ranges))
 
+def flags_from_file(filename: 'pathlib.Path',
+                    flag_type: str = 'freq') -> List[Tuple]:
+    """Load flags from file."""
+    lines = filename.read_text()
+    flags = []
+    for line in lines.split('\n'):
+        initial, final = line.split('~')
+        final = u.Quantity(final)
+        initial = float(initial) * final.unit
+        flags.append((initial, final))
+
+    return flags
+
 def get_freq_flags(freq: npt.ArrayLike, spectrum: npt.ArrayLike) -> List[Tuple]:
     """Convert spectrum mask indices to frequency range."""
+    # Masked channel slices
     slices = group_chans(spectrum)
 
     # Convert to range
@@ -60,7 +109,8 @@ def get_freq_flags(freq: npt.ArrayLike, spectrum: npt.ArrayLike) -> List[Tuple]:
     ranges = []
     delta = np.abs(freq[0] - freq[1]) / 2
     for slc in slices:
-        freq_ran = freq[slc.start], freq[slc.stop - 1]
+        freq_ran = np.array([freq[slc.start].value,
+                             freq[slc.stop - 1].value]) * freq.unit
         freq1 = np.min(freq_ran) - delta
         freq2 = np.max(freq_ran) + delta
         ranges.append((freq1, freq2))
@@ -111,12 +161,12 @@ def basic_masking(spectrum: npt.ArrayLike,
     """Apply a basic mask to the spectrum.
 
     Args:
-      spectrum: input spectrum.
-      edges: optional; number of channels to mask in the borders.
-      flagchans: optional; additional channels to flag in CASA format.
-      invalid_values: optional; flag values that are not allowed.
-      separator: optional; value separator.
-      log: optional; logging function.
+      spectrum: Input spectrum.
+      edges: Optional. Number of channels to mask in the borders.
+      flagchans: Optional. Additional channels to flag in CASA format.
+      invalid_values: Optional. Flag values that are not allowed.
+      separator: Optional. Value separator.
+      log: Optional. Logging function.
     """
     # Mask invalid
     spec = np.ma.masked_invalid(spectrum)
@@ -159,16 +209,16 @@ def find_continuum(spectrum: npt.ArrayLike,
     """Calculate a line free spectrum.
 
     Args:
-      spec: input spectrum.
-      edges: optional; number of channels to mask in the borders.
-      dilate: optional; number of iterations of mask erosion.
-      min_width: optional; minimum number of channels for a line.
-      min_gap: optional; minimum space between masked bands.
-      flagchans: optional; additional channels to flag in CASA format.
-      invalid_values: optional; flag values that are not allowed.
-      table: optional; table file to save results.
-      log: optional; logging function.
-      sigmaclip_pars: parameters for `sigma_clip` function.
+      spec: Input spectrum.
+      edges: Optional. Number of channels to mask in the borders.
+      dilate: Optional. Number of iterations of mask erosion.
+      min_width: Optional. Minimum number of channels for a line.
+      min_gap: Optional. Minimum space between masked bands.
+      flagchans: Optional. Additional channels to flag in CASA format.
+      invalid_values: Optional. Flag values that are not allowed.
+      table: Optional. Table file to save results.
+      log: Optional. Logging function.
+      sigmaclip_pars: Optional. Parameters for `sigma_clip` function.
 
     Returns:
       A masked array of the spectrum.
@@ -185,7 +235,7 @@ def find_continuum(spectrum: npt.ArrayLike,
     ntot = specfil.data.size
     log(f'Initial number of masked channels = {nfil}/{ntot}')
 
-    # Erode lines
+    # Dilate mask
     if dilate >= specfil.data.size/2:
         raise ValueError('Dilating lines over all spectrum')
     if dilate > 0:
@@ -234,8 +284,8 @@ def get_sigma_clip_steps(spec: npt.ArrayLike,
     """Calculate sigma-clip steps one-by-one.
 
     Args:
-      spec: initial spectrum.
-      sigmaclip_pars: parameters for `sigma_clip`.
+      spec: Initial spectrum.
+      sigmaclip_pars: Parameters for `sigma_clip`.
     """
     # Initial values
     means = [np.ma.mean(spec)]
@@ -246,7 +296,7 @@ def get_sigma_clip_steps(spec: npt.ArrayLike,
     # Increase number of iterations
     i = 1
     while True:
-        sigmaclip_pars['maxiter'] = i
+        sigmaclip_pars['maxiters'] = i
         filtered = sigma_clip(spec, **sigmaclip_pars)
         npoint = np.sum(~filtered.mask)
         if len(npoints) == 0 or npoints[-1] != npoint:
@@ -285,20 +335,20 @@ def reverse_levels(spectrum: npt.ArrayLike,
     discrete steps, and in the case of AFOLI the filtering is asymmetric.
 
     Args:
-      spectrum: the observed spectrum.
-      levels: levels of contamination to calculate.
-      means: continuum value for each iteration of `sigma_clip`.
-      stds: standard deviation of values at each `sigma_clip` iteration.
-      continuum: real continuum level.
-      sigma_lower: lower sigma level used in AFOLI.
-      sigma_upper: upper sigma level used in AFOLI.
-      level_mode: optional; kind of interpolation.
-      edges: optional; channels to ignore at the edges.
-      flagchans: optional; additional channels to flag.
-      invalid_values: optional; flag values that are not allowed.
-      plot_file: optional; plotting file.
-      chan_file: optional; channel file to store results in CASA format.
-      log: optional; logging function.
+      spectrum: The observed spectrum.
+      levels: Levels of contamination to calculate.
+      means: Continuum value for each iteration of `sigma_clip`.
+      stds: Standard deviation of values at each `sigma_clip` iteration.
+      continuum: Real continuum level.
+      sigma_lower: Lower sigma level used in AFOLI.
+      sigma_upper: Upper sigma level used in AFOLI.
+      level_mode: Optional. Kind of interpolation.
+      edges: Optional. Channels to ignore at the edges.
+      flagchans: Optional. Additional channels to flag.
+      invalid_values: Optional. Flag values that are not allowed.
+      plot_file: Optional. Plotting file.
+      chan_file: Optional. Channel file to store results in CASA format.
+      log: Optional. Logging function.
     """
     for level in levels:
         log('-' * 80)
@@ -354,7 +404,7 @@ def reverse_levels(spectrum: npt.ArrayLike,
         # Save file
         if chan_file is not None:
             filename = chan_file.with_suffix(f'.{level}{chan_file.suffix}')
-            write_casa_chans(chans, chan_file)
+            write_casa_chans(chans, filename)
         else:
             chans = chans_to_casa(chans)
             log(f'Flagged channels: {chans}')
@@ -381,24 +431,24 @@ def afoli(spectrum: npt.ArrayLike,
     line emission.
 
     Args:
-      spectrum: spectrum to mask.
-      sigma: optional; sigma lower and upper limits for `sigma_clip`.
-      chan_file: optional; file where to write the selected channels in CASA
+      spectrum: Spectrum to mask.
+      sigma: Optional. Sigma lower and upper limits for `sigma_clip`.
+      chan_file: Optional. File where to write the selected channels in CASA
         format.
-      censtat: optional; statistical function name.
-      niter: optional; number of iterations of the `sigma_clip` function.
-      extremes: optional; number of channels to mask in the borders.
-      min_width: optional; minimum number of channels for a line.
-      min_gap: optional; minimum space between masked bands.
-      dilate: optional; number of channels to dilate on each side of a line.
-      flagchans: optional; additional channels to flag in CASA format.
-      invalid_values: optional; flag values that are not allowed.
-      table: optional; table file to save results.
-      levels: optional; compute masks at different levels from the continuum.
-      level_mode: optional; how to determine the iteration number for each
+      censtat: Optional. Statistical function name.
+      niter: Optional. Number of iterations of the `sigma_clip` function.
+      extremes: Optional. Number of channels to mask in the borders.
+      min_width: Optional. Minimum number of channels for a line.
+      min_gap: Optional. Minimum space between masked bands.
+      dilate: Optional. Number of channels to dilate on each side of a line.
+      flagchans: Optional. Additional channels to flag in CASA format.
+      invalid_values: Optional. Flag values that are not allowed.
+      table: Optional. Table file to save results.
+      levels: Optional. Compute masks at different levels from the continuum.
+      level_mode: Optional. How to determine the iteration number for each
         level.
-      plot_file: optional; plot results and save figure.
-      log: optional; logging function.
+      plot_file: Optional. Plot results and save figure.
+      log: Optional. Logging function.
 
     Returns:
       An array with the masked channels.
@@ -425,7 +475,7 @@ def afoli(spectrum: npt.ArrayLike,
         raise ValueError
 
     # Find continuum
-    sigmaclip_pars['maxiter'] = niter
+    sigmaclip_pars['maxiters'] = niter
     basic_mask_pars = {'edges': extremes,
                        'flagchans': flagchans,
                        'invalid_values': invalid_values}
@@ -511,17 +561,20 @@ def get_plot(xlabel: str = 'Iteration number',
     """Initialize the stats and spectrum plot.
 
     Args:
-      xlabel: optional; stats x-axis label.
-      ylabel_left: optional; stats left y-axis label.
-      ylabel_right: optional; stats right y-axis label.
-      naxes: optional; number of axes to create.
+      xlabel: Optional. Stats x-axis label.
+      ylabel_left: Optional. Stats left y-axis label.
+      ylabel_right: Optional. Stats right y-axis label.
+      naxes: Optional. Number of axes to create.
+
+    Returns:
+      A figure and its axes.
     """
     # Initialize figure and axes
     plt.close()
     figsize = 17.2, 3.5
     if naxes == 2:
         width_ratios = [1/5, 4/5]
-        fig, axs = plt.subplots(1, naxes, figsize=figsize,
+        fig, axs = plt.subplots(nrows=1, ncols=naxes, figsize=figsize,
                                 width_ratios=width_ratios)
 
         # Stats left axis
@@ -533,7 +586,7 @@ def get_plot(xlabel: str = 'Iteration number',
         ax0b = axs[0].twinx()
         ax0b.set_ylabel(ylabel_right)
         ax0b.tick_params('y', colors='r')
-        axs = axs[:-1] + (ax0b, axs[-1])
+        axs = (axs[0], ax0b, axs[-1])
     elif naxes == 1:
         fig, *axs = plt.subplots(1, naxes, figsize=figsize)
     else:
@@ -557,13 +610,13 @@ def plot_spectrum(spectrum: npt.ArrayLike,
     """Plot a spectrum.
 
     Args:
-      spectrum: spectrum data.
-      fig: optional; `matplotlib` figure object.
-      ax: optional; `matplotlib` axes object.
-      filename: optional; figure file name.
-      continuum: optional; plot horizontal line with the continuum level.
-      mask: optional; plot masked regions.
-      title: optional; plot title.
+      spectrum: Spectrum data.
+      fig: Optional. A `matplotlib` figure object.
+      ax: Optional. A `matplotlib` axes object.
+      filename: Optional. Figure file name.
+      continuum: Optional. Plot horizontal line with the continuum level.
+      mask: Optional. Plot masked regions.
+      title: Optional. Plot title.
     """
     if ax is None:
         fig, axs = get_plot(naxes=1)
@@ -593,9 +646,9 @@ def plot_mask(ax: 'matplotlib.Axes',
     """Plot masked region.
     
     Args:
-      ax: plot axis.
-      chans: list of channel slices.
-      color: optional; color of the mask band.
+      ax: Plot axis.
+      chans: List of channel slices.
+      color: Optional. Color of the mask band.
     """
     for slc in chans:
         ax.axvspan(slc.start, slc.stop - 1, fc=color, alpha=0.5, ls='-')
@@ -609,7 +662,7 @@ def get_afoli_pars(config: SectionProxy,
                    float_list_keys: Sequence[str] = ('sigma', 'levels',
                                                      'invalid_values'),
                    **cfgvars: Dict) -> Dict[str, Any]:
-    """Get AFOLI parameters.
+    """Get AFOLI parameters from configuration parser.
 
     Uses config values with `cfgvars` taking precedence.
     """
@@ -626,27 +679,35 @@ def afoli_iter_data(images: 'pathlib.Path',
                     position: Optional[Tuple[int, int]] = None,
                     outfile: Optional['pathlib.Path'] = None,
                     resume: bool = False,
-                    log: Callable = print):
-    """Iterate over data.
+                    log: Callable = print) -> Dict['str', List[Tuple]]:
+    """Run AFOLI by iterating over image data.
 
     Args:
-      images: image filenames.
+      images: Image filenames.
       config: `ConfigParser` proxy with input for AFOLI.
-      position: optional; peak position to get the spectra from.
-      outfile: optional; file to record all the flags together.
-      resume: optional; recalculate if channel files are detected?
-      log: optional; logging function.
+      plot_dir: Optional. Plotting directory.
+      position: Optional. Peak position to get the spectra from.
+      outfile: Optional. File to record all the flags together.
+      resume: Optional. Recalculate if channel files are detected?
+      log: Optional. Logging function.
+
+    Returns:
+      A dictionary with each image file name associated with its frequency
+      flags.
     """
     # Find position of spectra
+    #if 'position' in config and position is None:
+    #    position = tuple(map(int, config['position'].split(',')))
     if 'position' in config and position is None:
-        position = tuple(map(int, config['position'].split(',')))
+        ra, dec, frame = config['position'].split()
+        position = SkyCoord(ra, dec, frame=frame)
     if position is None:
         log('Finding common peak position')
         method = config['collapse']
         save_collapsed = config.getboolean('save_collapse', fallback=True)
         log('Peak finding method: %s', method)
         position = get_common_position(images, method, resume=resume,
-                                       save_collapsed=save_collapsed)
+                                       save_collapsed=save_collapsed, log=log)
         log('Peak position: %s', position)
     else:
         log(f'Using input position: {position}')
@@ -661,9 +722,8 @@ def afoli_iter_data(images: 'pathlib.Path',
         freq_flags_file = imagename.with_suffix('.line_freq_flags.txt')
         plot_file = plot_dir / imagename.with_suffix('.spec.afoli.png').name
         if freq_flags_file.exists() and resume:
-            #line_flags[freq_flags_file.name] = flags_file.read_text()
-            #continue
-            raise NotImplementedError
+            line_flags[freq_flags_file.name] = flags_from_file(freq_flags_file)
+            continue
 
         # Get spectrum
         freq, spectrum = get_spectrum(cube_file=imagename, position=position,
