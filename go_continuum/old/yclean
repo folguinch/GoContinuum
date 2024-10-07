@@ -1,0 +1,178 @@
+#!/bin/bash
+################################################################################
+#                       ALMA data cube imaging                                 #
+#                                                                              #
+# Produce ALMA data cubes using YCLEAN (Contreras et al. 2018).                #
+#                                                                              #
+################################################################################
+################################################################################
+################################################################################
+# Bash options
+set -eu
+
+# Environmental
+export MPICASA
+export PYTHONPATH
+
+# Constants
+readonly DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+readonly PKGDIR="$( dirname $DIR )"
+readonly LOGS="logs"
+readonly LOGGERFILE="$LOGS/yclean_debug.log"
+readonly CASA="python3"
+
+# Globals
+declare BASE="./"
+declare OPTSPEC=":htn:b:-:"
+declare -i REDO=1
+declare -i VERBOSE=1
+declare -i NPROC=5
+declare -i COMMONBEAM=0
+declare -i FULL=0
+declare XPOS YPOS YCLEAN uvdata config option
+
+################################################################################
+################################################################################
+# Functions                                                                    #
+################################################################################
+################################################################################
+# Import functions
+source ${DIR}/utils.sh
+source ${DIR}/functions.sh
+
+#######################################
+# Usage function.
+#######################################
+function usage() {
+  # Print usage and exit with error
+  cat <<fin
+Usage: yclean [-h|--help] [--noredo] [--common_beam] [--vv] config uvdata
+
+Parameters:
+  config                Configuration file
+  uvdata                UV data
+
+Options:
+  -h, --help            Help
+  --noredo              Skip steps some steps already finished
+  --common_beam         Compute common bean of final cube
+  --full                Save intermediate images and masks
+  --vv                  Set verbose level to debug
+fin
+  exit 1
+}
+
+#######################################
+# Check directories.
+# Globals:
+#   YCLEAN
+#   CLEAN
+#######################################
+function check_environment() {
+  if [[ ! -d $YCLEAN ]]; then
+    logger "Creating yclean directory"
+    mkdir $YCLEAN
+  fi
+  if [[ ! -d $CLEAN ]]; then
+    logger "Creating clean directory"
+    mkdir $CLEAN
+  fi
+}
+
+################################################################################
+################################################################################
+# Main program.                                                                #
+################################################################################
+################################################################################
+# Setup logger
+# Initialize logger file
+if [[ ! -d $LOGS ]]; then
+  mkdir $LOGS
+fi
+logger "SEP" 1
+
+# Check goco dir is in PYTHONPATH
+if [[ ":${PYTHONPATH}:" != *":${PKGDIR}:"* ]]; then
+  logger "Adding ${PKGDIR} to PYTHONPATH"
+  PYTHONPATH="${PKGDIR}:${PYTHONPATH}"
+fi
+
+
+# Process the input options. Add options as needed
+while getopts $OPTSPEC option; do
+  if [[ $option == "-" ]]; then
+    opt="$OPTARG"
+    if [[ ${!OPTIND} == -* ]]; then
+      OPTARG=":"
+    else
+      OPTARG="${!OPTIND}"
+    fi
+  else
+    opt="$option"
+  fi
+  case $opt in
+    h | help ) # Display Help
+      usage
+      ;;
+    noredo ) # Change REDO
+      REDO=0
+      ;;
+    common_beam ) # Compute common beam?
+      COMMONBEAM=1
+      ;;
+    full ) # Save images?
+      FULL=1
+      ;;
+    b | base ) # Base directory
+      BASE="$OPTARG"
+      if [[ $opt == "base" ]]; then
+        OPTIND=$((OPTIND+1))
+      fi
+      ;;
+    n | nproc ) # Number of processes for parallel
+      NPROC="$OPTARG"
+      if [[ $opt == "nproc" ]]; then
+        OPTIND=$((OPTIND+1))
+      fi
+      ;;
+    vv ) # Increase verbose level
+      VERBOSE=2
+      logger "Previous messages written to file"
+      ;;
+    spec ) # Plot spectrum at this position
+      XPOS=$OPTARG
+      OPTIND=$((OPTIND+1))
+      YPOS=${!OPTIND}
+      logger "Spectrum position: $XPOS, $YPOS"
+      OPTIND=$((OPTIND+1))
+      ;;
+    \? ) # Incorrect option
+      echo "ERROR: Invalid option: -$OPTARG"
+      usage
+      ;;
+    : ) # Invalid argument
+      echo "ERROR: -$OPTARG requires an argument"
+      usage
+      ;;
+    * ) # Invalid long anrguments
+      echo "ERROR: Invalid option: --$opt"
+      usage
+      ;;
+  esac
+done
+shift $((OPTIND-1))
+config=$1
+logger "Configuration file: ${config}"
+shift
+uvdata=$1
+logger "UV data: ${uvdata}"
+
+# Environment setup
+YCLEAN="${BASE}/yclean"
+if [[ ! -v MPICASA ]]; then
+  MPICASA="$(which mpicasa) -n $NPROC $(which casa)"
+fi
+
+logger "DEBUG" "$(declare -p | grep "declare -- *")"
+run_yclean "$config" "$uvdata" 
+echo "YCLEAN has ended"

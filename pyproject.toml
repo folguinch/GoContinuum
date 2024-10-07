@@ -1,0 +1,22 @@
+[tool.poetry]
+name = "go-continuum"
+version = "3.0.0"
+description = "Continuum subtraction pipeline for ALMA data"
+authors = ["Fernando Olguin <f.olguin.ch@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "go_continuum"}]
+
+[tool.poetry.dependencies]
+python = ">=3.9,<4.0"
+astropy = "^6.0.0"
+casatasks = "^6.6.0.20"
+casatools = "^6.6.0.20"
+casadata = "^2023.9.18"
+spectral-cube = "^0.6.5"
+numpy = "^1.26.3"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
