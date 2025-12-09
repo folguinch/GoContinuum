@@ -145,7 +145,7 @@ class DataManager:
                 spws = spws_per_eb(original_uvdata)[i+1]
             else:
                 uvdata = original_uvdata[i]
-                spws = spws_per_eb(uvdata)[i+1]
+                spws = spws_per_eb(uvdata)[1]
             handler = DataHandler(name=self.config['DEFAULT']['name'],
                                   field=self.config['DEFAULT']['field'],
                                   uvdata=uvdata,
@@ -252,7 +252,7 @@ class DataManager:
         """Concatenate data if more than 1 EB."""
         if len(self.data) > 1 and not self.is_concat():
             self.log.info('Concatenating input MSs')
-            vis = [f'{data.uvdata}' for data in self.data.values()]
+            vis = [f'{data.uvdata}' for data in self.data]
             tasks.concat(vis=vis, concatvis=f'{self.concat_uvdata}')
             self.set_concat_spws()
 
