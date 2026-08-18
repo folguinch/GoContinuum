@@ -433,6 +433,7 @@ class DataManager:
         if flags_file is None:
             flags_file = self.concat_uvdata.with_suffix('.line_chan_flags.json')
             flags_file = self.environ.uvdata / flags_file.name
+            self.log.info('Setting flags file: %s', flags_file)
 
         # Continuum: all channels
         to_clean = {}
