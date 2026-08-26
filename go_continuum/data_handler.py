@@ -166,10 +166,10 @@ class DataManager:
 
     def set_concat_spws(self) -> None:
         """Set `concat_spws` from concat data."""
-        if len(self.data) == 1:
-            self.concat_spws = [[i] for i in self.data[0].spws]
-        else:
-            self.concat_spws = spws_for_names(self.concat_uvdata)
+        #if len(self.data) == 1:
+        #    self.concat_spws = [[i] for i in self.data[0].spws]
+        #else:
+        self.concat_spws = spws_for_names(self.concat_uvdata)
         self.log.info('Concat spws: %s', self.concat_spws)
 
     def get_imagename(self,
